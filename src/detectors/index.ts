@@ -1,0 +1,7 @@
+export { detectCompiler } from './compiler.js'
+export { detectLanguage } from './language.js'
+export { detectLibraries } from './library.js'
+export { detectCapabilities } from './capability.js'
+export { detectSecurity } from './security.js'
+export { detectPacker, detectObfuscation } from './packer.js'
+export { extractStrings } from './string-extractor.js'
