@@ -2,6 +2,23 @@
 
 **Binary Intelligence & Reverse Engineering Framework**
 
+<div align="center">
+
+  [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+  [![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+  [![License](https://img.shields.io/badge/License-MIT-green.svg)]()
+  [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)]()
+
+  <a href="#features"><img src="https://img.shields.io/badge/%E2%9A%A1-Features-7c3aed?style=for-the-badge"></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/%F0%9F%93%9A-Installation-2563eb?style=for-the-badge"></a>
+  <a href="#cli-usage"><img src="https://img.shields.io/badge/%F0%9F%A7%AA-CLI%20Usage-0d9488?style=for-the-badge"></a>
+  <a href="#sdk-usage"><img src="https://img.shields.io/badge/%F0%9F%8F%97-SDK%20Usage-475569?style=for-the-badge"></a>
+  <a href="#plugin-system"><img src="https://img.shields.io/badge/%F0%9F%A4%9D-Plugin%20System-c026d3?style=for-the-badge"></a>
+
+</div>
+
+---
+
 HexLens is an open-source, TypeScript-first binary intelligence framework that automatically analyzes executable files and produces structured intelligence reports. Given a PE, ELF, Mach-O, or WASM binary, HexLens tells you everything important about it, how it was built, what technologies it uses, how it behaves, and what makes it unique.
 
 ```ts
