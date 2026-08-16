@@ -1,15 +1,15 @@
 # HexLens
 
-**Binary Intelligence & Reverse Engineering Framework**
+
 
 <div align="center">
-<img width="600" height="300" alt="5217075e-69ae-4778-8358-48fa3c6e765d" src="https://github.com/user-attachments/assets/76b396a5-4f83-414e-9e04-0854596ff551" />
+<img width="650" height="300" alt="5217075e-69ae-4778-8358-48fa3c6e765d" src="https://github.com/user-attachments/assets/76b396a5-4f83-414e-9e04-0854596ff551" />
 
 
 </div>
 
 ---
-
+**Binary Intelligence & Reverse Engineering Framework**
 HexLens is an open-source, TypeScript-first binary intelligence framework that automatically analyzes executable files and produces structured intelligence reports. Given a PE, ELF, Mach-O, or WASM binary, HexLens tells you everything important about it, how it was built, what technologies it uses, how it behaves, and what makes it unique.
 
 ```ts
