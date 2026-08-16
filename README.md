@@ -70,7 +70,12 @@ npx hexlens tui program.exe
 # See all formats
 npx hexlens formats
 ```
-<img width="1098" height="396" alt="Screenshot 2026-08-16 225106" src="https://github.com/user-attachments/assets/c895997b-7da6-41cd-85cc-1f307cc6e23b" />
+
+## Images 
+```
+<img width="1094" height="572" alt="Screenshot 2026-08-16 225046" src="https://github.com/user-attachments/assets/c76474c4-ba66-426e-9c7d-8bb691296919" />
+<img width="1098" height="396" alt="Screenshot 2026-08-16 225106" src="https://github.com/user-attachments/assets/fd67b37d-5b17-4cc1-95f8-e11fae5a36a8" />
+```
 
 
 ### Output Formats
