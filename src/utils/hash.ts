@@ -28,5 +28,5 @@ export function computeImphash(imports: { module: string; name: string }[]): str
   }
   if (list.length === 0) return ''
   list.sort()
-  return md5(list.join(','))
+  return md5(Buffer.from(list.join(',')))
 }
