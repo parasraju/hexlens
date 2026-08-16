@@ -266,7 +266,77 @@ function extractExports(data: Uint8Array, dataDirStart: number, isPE32Plus: bool
 }
 
 function extractResources(data: Uint8Array, sections: SectionInfo[]): { name: string; type: string; size: number; offset: number }[] {
-  return []
+  const reader = BufferReader.from(data)
+  const dataDirStart = sections.length > 0 ? findDataDirStart(data) : 0
+  if (dataDirStart === 0) return []
+
+  const resourceRVA = reader.peekU32(dataDirStart + 2 * 8, true)
+  const resourceSize = reader.peekU32(dataDirStart + 2 * 8 + 4, true)
+  if (resourceRVA === 0 || resourceSize === 0) return []
+
+  const rootOffset = resolveRVA(data, resourceRVA, sections)
+  if (rootOffset === null) return []
+
+  const typeNames: Record<number, string> = {
+    1: 'CURSOR', 2: 'BITMAP', 3: 'ICON', 4: 'MENU', 5: 'DIALOG', 6: 'STRING',
+    7: 'FONTDIR', 8: 'FONT', 9: 'ACCELERATOR', 10: 'RCDATA', 11: 'MESSAGETABLE',
+    12: 'GROUP_CURSOR', 14: 'GROUP_ICON', 16: 'VERSION', 17: 'DLGINCLUDE',
+    19: 'PLUGPLAY', 20: 'VXD', 21: 'ANICURSOR', 22: 'ANIICON', 23: 'HTML', 24: 'MANIFEST',
+  }
+
+  const result: { name: string; type: string; size: number; offset: number }[] = []
+
+  const readDirectory = (dirOffset: number): void => {
+    if (dirOffset + 16 > data.length) return
+    const named = reader.peekU16(dirOffset + 12, true)
+    const idCount = reader.peekU16(dirOffset + 14, true)
+    const entries = dirOffset + 16
+    for (let i = 0; i < named + idCount; i++) {
+      const entryOff = entries + i * 8
+      if (entryOff + 8 > data.length) return
+      const nameOrId = reader.peekU32(entryOff, true)
+      const dataOrDir = reader.peekU32(entryOff + 4, true)
+      if ((dataOrDir & 0x80000000) !== 0) {
+        const subDir = rootOffset + (dataOrDir & 0x7FFFFFFF)
+        readDirectory(subDir)
+      } else {
+        const dataEntry = resolveRVA(data, dataOrDir, sections)
+        if (dataEntry === null || dataEntry + 16 > data.length) continue
+        const payloadRva = reader.peekU32(dataEntry, true)
+        const size = reader.peekU32(dataEntry + 4, true)
+        const payloadOff = resolveRVA(data, payloadRva, sections)
+        if (payloadOff === null) continue
+        const isNamed = (nameOrId & 0x80000000) !== 0
+        let name = ''
+        let type = ''
+        if (isNamed) {
+          const nameOff = rootOffset + (nameOrId & 0x7FFFFFFF)
+          const len = reader.peekU16(nameOff, true)
+          name = reader.readString(Math.min(len, 256), 'utf16')
+        }
+        if (typeNames[nameOrId & 0x7FFFFFFF]) {
+          type = typeNames[nameOrId & 0x7FFFFFFF]
+        }
+        result.push({
+          name: name || `${nameOrId & 0x7FFFFFFF}`,
+          type: type || `TYPE_${nameOrId & 0x7FFFFFFF}`,
+          size,
+          offset: payloadOff,
+        })
+      }
+    }
+  }
+
+  readDirectory(rootOffset)
+  return result
+}
+
+function findDataDirStart(data: Uint8Array): number {
+  const reader = BufferReader.from(data)
+  const peOffset = reader.peekU32(0x3C, true)
+  if (peOffset + 24 + 4 > data.length) return 0
+  const magic = reader.peekU16(peOffset + 24, true)
+  return peOffset + 24 + (magic === 0x20B ? 112 : 96)
 }
 
 function findSectionByRVA(rva: number, sections: SectionInfo[]): SectionInfo | null {

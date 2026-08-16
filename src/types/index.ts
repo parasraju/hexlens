@@ -1,4 +1,4 @@
-export type BinaryFormat = 'PE' | 'ELF' | 'Mach-O' | 'WASM' | 'Unknown'
+export type BinaryFormat = 'PE' | 'ELF' | 'Mach-O' | 'WASM' | 'DEX' | '.NET' | 'Unknown'
 export type Architecture = 'x86' | 'x64' | 'ARM' | 'ARM64' | 'MIPS' | 'RISC-V' | 'PowerPC' | 'SPARC' | 'm68k' | 'Unknown'
 export type OperatingSystem = 'Windows' | 'Linux' | 'macOS' | 'Android' | 'iOS' | 'Unknown'
 export type Endianness = 'little' | 'big'

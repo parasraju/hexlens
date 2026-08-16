@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
 import { analyze } from './index.js'
+import { runTUI } from './tui.js'
 import { toJSON, toMarkdown, toTerminal, toHTML, toSARIF, toYAML, toCSV } from './reporters/index.js'
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -10,7 +11,7 @@ const program = new Command()
 program
   .name('hexlens')
   .description('Binary Intelligence & Reverse Engineering Framework')
-  .version('0.1.0')
+  .version('0.2.0')
 
 program
   .command('analyze')
@@ -58,6 +59,20 @@ program
       } else {
         console.log(output)
       }
+    } catch (err) {
+      console.error('Analysis failed:', err instanceof Error ? err.message : err)
+      process.exit(1)
+    }
+  })
+
+program
+  .command('tui')
+  .description('Browse an analysis in an interactive terminal UI')
+  .argument('<file>', 'Path to the binary file')
+  .action(async (file: string) => {
+    try {
+      const report = await analyze(resolve(file))
+      await runTUI(report)
     } catch (err) {
       console.error('Analysis failed:', err instanceof Error ? err.message : err)
       process.exit(1)

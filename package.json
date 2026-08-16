@@ -1,6 +1,6 @@
 {
   "name": "hexlens",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Open Source Binary Intelligence & Reverse Engineering Framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -37,12 +37,17 @@
     "pe",
     "elf",
     "macho",
+    "dex",
+    "dotnet",
+    "imphash",
     "security",
-    "forensics"
+    "forensics",
+    "tui"
   ],
   "license": "MIT",
   "dependencies": {
-    "commander": "^12.1.0"
+    "commander": "^12.1.0",
+    "terminal-kit": "^3.1.4"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

@@ -14,6 +14,17 @@ export function toMarkdown(report: BinaryReport): string {
   lines.push(`- **SHA1:** \`${report.file.sha1}\``)
   lines.push(`- **Entry Point:** 0x${report.entryPoint.toString(16)}`)
   lines.push(`- **Stripped:** ${report.stripped}`)
+  if (report.metadata.imphash) {
+    lines.push(`- **Imphash:** \`${report.metadata.imphash}\``)
+  }
+  const assembly = report.metadata.assembly as { name?: string; version?: string; runtime?: string } | undefined
+  if (assembly && (assembly.name || assembly.runtime)) {
+    lines.push(`- **Assembly:** ${assembly.name || '?'} ${assembly.version ? `v${assembly.version}` : ''} (CLR ${assembly.runtime || '?'})`)
+  }
+  const dex = report.metadata.dex as { version?: string; classes?: number; methods?: number } | undefined
+  if (dex) {
+    lines.push(`- **DEX Version:** ${dex.version} | **Classes:** ${dex.classes} | **Methods:** ${dex.methods}`)
+  }
   if (report.timestamp > 0) {
     lines.push(`- **Timestamp:** ${new Date(report.timestamp * 1000).toISOString()}`)
   }
@@ -123,6 +134,16 @@ export function toMarkdown(report: BinaryReport): string {
     }
     for (const [type, count] of byType) {
       lines.push(`- **${type}**: ${count}`)
+    }
+    lines.push('')
+  }
+
+  if (report.resources.length > 0) {
+    lines.push('## Resources')
+    lines.push('| Name | Type | Size |')
+    lines.push('|------|------|------|')
+    for (const r of report.resources) {
+      lines.push(`| ${r.name} | ${r.type} | ${r.size} |`)
     }
     lines.push('')
   }

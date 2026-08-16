@@ -19,3 +19,14 @@ export function hashes(data: Buffer | Uint8Array): { sha256: string; sha1: strin
     md5: md5(data),
   }
 }
+
+export function computeImphash(imports: { module: string; name: string }[]): string {
+  const list: string[] = []
+  for (const imp of imports) {
+    if (!imp.name) continue
+    list.push(`${imp.module.toLowerCase()}.${imp.name.toLowerCase()}`)
+  }
+  if (list.length === 0) return ''
+  list.sort()
+  return md5(list.join(','))
+}

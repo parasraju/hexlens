@@ -17,7 +17,7 @@ export function detectSecurity(ctx: PluginContext): SecurityInfo {
     overlay: false,
   }
 
-  if (ctx.format === 'PE') {
+  if (ctx.format === 'PE' || ctx.format === '.NET') {
     const pe = ctx.metadata.peData as any
     if (pe) {
       result.aslr = pe.dllCharacteristics ? (pe.dllCharacteristics & 0x40) !== 0 : false

@@ -7,9 +7,19 @@ export function detectFormat(data: Uint8Array): { format: BinaryFormat; endianne
     const peOffset = new DataView(data.buffer, data.byteOffset + 0x3C, 4).getUint32(0, true)
     if (peOffset + 4 <= data.length) {
       const peSig = data[peOffset] === 0x50 && data[peOffset + 1] === 0x45
-      if (peSig) return { format: 'PE', endianness: 'little' }
+      if (peSig) {
+        if (hasComDescriptor(data, peOffset)) return { format: '.NET', endianness: 'little' }
+        return { format: 'PE', endianness: 'little' }
+      }
     }
     return { format: 'PE', endianness: 'little' }
+  }
+
+  if (
+    data[0] === 0x64 && data[1] === 0x65 && data[2] === 0x78 && data[3] === 0x0A &&
+    data[4] === 0x33 && data[5] === 0x35 && data[6] === 0x00
+  ) {
+    return { format: 'DEX', endianness: 'little' }
   }
 
   if (data[0] === 0x7F && data[1] === 0x45 && data[2] === 0x4C && data[3] === 0x46) {
@@ -38,7 +48,7 @@ export function detectFormat(data: Uint8Array): { format: BinaryFormat; endianne
 }
 
 export function detectArchitecture(data: Uint8Array, format: BinaryFormat): Architecture {
-  if (format === 'PE') {
+  if (format === 'PE' || format === '.NET') {
     if (data.length < 0x3C + 4 + 4 + 2) return 'Unknown'
     const peOffset = new DataView(data.buffer, data.byteOffset + 0x3C, 4).getUint32(0, true)
     const machine = new DataView(data.buffer, data.byteOffset + peOffset + 4, 2).getUint16(0, true)
@@ -87,9 +97,20 @@ export function detectArchitecture(data: Uint8Array, format: BinaryFormat): Arch
 export function detectOS(format: BinaryFormat): OperatingSystem {
   switch (format) {
     case 'PE': return 'Windows'
+    case '.NET': return 'Windows'
     case 'ELF': return 'Linux'
     case 'Mach-O': return 'macOS'
+    case 'DEX': return 'Android'
     case 'WASM': return 'Unknown'
     default: return 'Unknown'
   }
+}
+
+function hasComDescriptor(data: Uint8Array, peOffset: number): boolean {
+  if (peOffset + 24 + 4 > data.length) return false
+  const magic = new DataView(data.buffer, data.byteOffset + peOffset + 24, 2).getUint16(0, true)
+  const dataDirStart = peOffset + 24 + (magic === 0x20B ? 112 : 96)
+  if (dataDirStart + 14 * 8 + 8 > data.length) return false
+  const comRva = new DataView(data.buffer, data.byteOffset + dataDirStart + 14 * 8, 4).getUint32(0, true)
+  return comRva !== 0
 }

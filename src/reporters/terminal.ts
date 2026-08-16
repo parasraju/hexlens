@@ -15,6 +15,22 @@ export function toTerminal(report: BinaryReport): string {
   lines.push(` Entry Point:  0x${report.entryPoint.toString(16).padStart(8, '0')}`)
   lines.push(` Stripped:     ${report.stripped}`)
 
+  if (report.metadata.imphash) {
+    lines.push(` Imphash:      ${report.metadata.imphash}`)
+  }
+
+  const assembly = report.metadata.assembly as { name?: string; version?: string; runtime?: string } | undefined
+  if (assembly && (assembly.name || assembly.runtime)) {
+    lines.push(` Assembly:     ${assembly.name || '?'} ${assembly.version ? `v${assembly.version}` : ''}`)
+    if (assembly.runtime) lines.push(` CLR:          ${assembly.runtime}`)
+  }
+
+  const dex = report.metadata.dex as { version?: string; classes?: number; methods?: number } | undefined
+  if (dex) {
+    lines.push(` DEX Version:  ${dex.version}`)
+    lines.push(` Classes:      ${dex.classes}  Methods: ${dex.methods}`)
+  }
+
   if (report.compiler) {
     lines.push(` Compiler:     ${report.compiler.name} (${report.compiler.confidence}%)`)
   }
@@ -59,6 +75,19 @@ export function toTerminal(report: BinaryReport): string {
       const entr = s.entropy.toFixed(2).padStart(6)
       lines.push(`  ${name} ${size} ${entr} ${s.permissions}`)
     }
+  }
+
+  if (report.resources.length > 0) {
+    lines.push('')
+    lines.push(` ${color('magenta', 'Resources')}`)
+    lines.push(sep)
+    lines.push('  Name                     Type          Size')
+    for (const r of report.resources.slice(0, 15)) {
+      const name = (r.name || '').padEnd(24).substring(0, 24)
+      const type = (r.type || '').padEnd(14).substring(0, 14)
+      lines.push(`  ${name} ${type} ${r.size}`)
+    }
+    if (report.resources.length > 15) lines.push(`  ... ${report.resources.length - 15} more`)
   }
 
   if (report.security) {

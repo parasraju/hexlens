@@ -53,7 +53,7 @@ export function toSARIF(report: BinaryReport): string {
     $schema: 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json',
     version: '2.1.0',
     runs: [{
-      tool: { driver: { name: 'HexLens', version: '0.1.0' } },
+      tool: { driver: { name: 'HexLens', version: '0.2.0' } },
       artifacts: [{
         location: { uri: report.file.name },
         description: { text: `Binary analysis: ${report.format} ${report.architecture}` },
