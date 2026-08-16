@@ -17,7 +17,7 @@ export function detectFormat(data: Uint8Array): { format: BinaryFormat; endianne
 
   if (
     data[0] === 0x64 && data[1] === 0x65 && data[2] === 0x78 && data[3] === 0x0A &&
-    data[4] === 0x33 && data[5] === 0x35 && data[6] === 0x00
+    data[4] === 0x30 && data[5] === 0x33 && data[6] === 0x35 && data[7] === 0x00
   ) {
     return { format: 'DEX', endianness: 'little' }
   }
