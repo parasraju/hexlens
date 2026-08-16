@@ -3,7 +3,7 @@
 **Binary Intelligence & Reverse Engineering Framework**
 
 <div align="center">
-<img width="1000" height="500" alt="5217075e-69ae-4778-8358-48fa3c6e765d" src="https://github.com/user-attachments/assets/76b396a5-4f83-414e-9e04-0854596ff551" />
+<img width="600" height="300" alt="5217075e-69ae-4778-8358-48fa3c6e765d" src="https://github.com/user-attachments/assets/76b396a5-4f83-414e-9e04-0854596ff551" />
 
 
 </div>
