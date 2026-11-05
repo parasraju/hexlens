@@ -1,7 +1,15 @@
 {
   "name": "hexlens",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "Open Source Binary Intelligence & Reverse Engineering Framework",
+  "homepage": "https://github.com/parasraju/hexlens#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/parasraju/hexlens.git"
+  },
+  "bugs": {
+    "url": "https://github.com/parasraju/hexlens/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -14,7 +22,7 @@
     }
   },
   "bin": {
-    "hexlens": "./dist/cli.js"
+    "hexlens": "dist/cli.js"
   },
   "files": [
     "dist"
@@ -42,6 +50,8 @@
     "imphash",
     "security",
     "forensics",
+    "triage",
+    "batch-scan",
     "tui"
   ],
   "license": "MIT",

@@ -1,6 +1,10 @@
 # HexLens
 
+[![npm version](https://img.shields.io/npm/v/hexlens.svg)](https://www.npmjs.com/package/hexlens)
+[![GitHub](https://img.shields.io/badge/GitHub-parasraju%2Fhexlens-181717?logo=github)](https://github.com/parasraju/hexlens)
+
 **Binary Intelligence & Reverse Engineering Framework**
+
 HexLens is an open-source, TypeScript-first binary intelligence framework that automatically analyzes executable files and produces structured intelligence reports. Given a PE, ELF, Mach-O, or WASM binary, HexLens tells you everything important about it, how it was built, what technologies it uses, how it behaves, and what makes it unique.
 
 ```ts
@@ -28,6 +32,7 @@ const report = await analyze("program.exe")
 - **Managed & Dalvik Metadata** — .NET assembly name/version/CLR runtime, method defs and type refs; DEX classes, methods and string pools
 - **Binary Metrics** — Function count estimation, section entropy, complexity scoring, optimization level estimation
 - **Graph Generation** — Import graphs, dependency graphs, section graphs (Graphviz, Mermaid, JSON export)
+- **Batch Scanning** — Triage a whole folder in one flag-aware summary table (`hexlens scan ./samples/`)
 - **Interactive TUI** — Browse any analysis with a keyboard-driven terminal UI (`hexlens tui`)
 - **Plugin System** — Extend HexLens with custom detectors without modifying the core
 - **Multiple Reporters** — Terminal, JSON, Markdown, HTML, SARIF, YAML, CSV
@@ -58,8 +63,33 @@ npx hexlens analyze program.exe --format html --output report.html
 # Interactive terminal UI
 npx hexlens tui program.exe
 
+# Batch scan a folder (recursive by default)
+npx hexlens scan ./samples/
+
+# Export the batch scan as JSON, CSV, Markdown, HTML, YAML or SARIF
+npx hexlens scan ./samples/ --format json --output scan.json
+
+# Include files whose format is not recognized
+npx hexlens scan ./samples/ --all
+
 # See all formats
 npx hexlens formats
+```
+
+### Batch Scanning
+
+`hexlens scan <path>` walks a file or directory, runs the same `analyze()` pipeline on every
+supported binary, and prints a single triage table sorted by risk. Each row includes format,
+architecture, compiler, language, risk, and flags such as `PACKED`, `OBFUSC`, `UNSIGNED`,
+`NO-ASLR`, `INJECT`, `KEYLOG`, `ANTI-DBG`, `PERSIST`, `OVERLAY`, and `TS-ANOM`.
+
+Unrecognized files are skipped by default; pass `--all` to include them. Use `--no-recursive`
+for a flat scan, `--hidden` to include dotfiles, and `--format` to export the scan through the
+JSON, CSV, Markdown, HTML, YAML, or SARIF reporters.
+
+```bash
+# Scan a single binary too
+npx hexlens scan program.exe
 ```
 
 ## Images 
@@ -104,6 +134,18 @@ console.log(report.metadata.imphash) // "8e65e6f0f6e5c9e2f8d0b3c4a5d6e7f8"
 console.log(report.resources)      // [{ name, type: "VERSION", size, offset }]
 console.log(report.metadata.assembly) // { name: "MyApp", version: "1.0.0.0", runtime: "v4.0.30319" } (.NET)
 console.log(report.metadata.dex)   // { version: "035", classes, methods, strings } (DEX)
+```
+
+### Batch Scan API
+
+```ts
+import { scan } from "hexlens"
+
+const summary = await scan("./samples", { recursive: true })
+
+for (const { relativePath, risk, flags } of summary.files) {
+  console.log(relativePath, risk, flags.map(flag => flag.code).join(", "))
+}
 ```
 
 ### Report Structure
@@ -167,9 +209,12 @@ plugins.register({
 
 ```
 src/
-├── index.ts           # Main API (analyze function + exports)
+├── index.ts           # Public API + exports
+├── analyze.ts         # Core analyze() implementation
 ├── cli.ts             # CLI entry point
 ├── tui.ts             # Interactive terminal UI (hexlens tui)
+├── scan/              # Batch folder scanning
+│   └── index.ts
 ├── types/             # TypeScript type definitions
 │   ├── index.ts       # BinaryReport, SectionInfo, etc.
 │   └── plugin.ts      # Plugin/Detector interfaces
@@ -204,7 +249,8 @@ src/
 │   ├── terminal.ts
 │   ├── sarif.ts
 │   ├── yaml.ts
-│   └── csv.ts
+│   ├── csv.ts
+│   └── scan.ts        # Batch triage table / bundle reporters
 └── utils/             # Shared utilities
     ├── buffer-reader.ts
     ├── hash.ts        # sha/md5 + imphash
