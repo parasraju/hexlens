@@ -33,7 +33,7 @@ export function toScanTable(summary: ScanSummary, options: ScanFormatOptions = {
   const compilerWidth = Math.max(8, ...files.map(f => (f.report.compiler?.name || '-').length))
   const languageWidth = Math.max(4, ...files.map(f => (f.report.language?.name || '-').length))
   const riskWidth = 6
-  const flagsWidth = Math.max(5, ...files.map(f => flagCodes(f).length))
+  const flagsWidth = Math.max(5, ...files.map(f => flagCodes(f, true).length))
 
   const header = [
     'FILE'.padEnd(pathWidth),
@@ -59,13 +59,17 @@ export function toScanTable(summary: ScanSummary, options: ScanFormatOptions = {
       (file.report.compiler?.name || '-').padEnd(compilerWidth),
       (file.report.language?.name || '-').padEnd(languageWidth),
       colorRisk(risk, riskWidth, options.color !== false),
-      flagCodes(file).padEnd(flagsWidth),
+      flagCodes(file, true).padEnd(flagsWidth),
     ].join('  ')
     lines.push(` ${row}`)
   }
 
   lines.push('')
   lines.push(` Scanned ${files.length} ${files.length === 1 ? 'file' : 'files'} in ${formatDuration(summary.durationMs)} — ${counts.high} high, ${counts.medium} medium, ${counts.low + counts.none} clean`)
+  if (summary.yaraRules) {
+    const total = files.reduce((count, file) => count + (file.yaraMatches?.length ?? 0), 0)
+    lines.push(` YARA: ${total} rule ${total === 1 ? 'match' : 'matches'} (${summary.yaraRules})`)
+  }
   appendFooter(lines, summary)
   lines.push('')
 
@@ -84,6 +88,7 @@ export function toScanJSON(summary: ScanSummary, pretty = true): string {
       risk: file.risk,
       flags: file.flags,
       report: file.report,
+      ...(file.yaraMatches ? { yaraMatches: file.yaraMatches } : {}),
     })),
   }, null, pretty ? 2 : undefined)
 }
@@ -339,8 +344,12 @@ function colorRisk(label: string, width: number, color: boolean): string {
   return code ? `${code}${padded}\x1b[0m` : padded
 }
 
-function flagCodes(file: ScanFile): string {
-  return file.flags.map(flag => flag.code).join(', ')
+function flagCodes(file: ScanFile, includeYara = false): string {
+  const codes = file.flags.map(flag => flag.code)
+  if (includeYara && file.yaraMatches) {
+    for (const match of file.yaraMatches) codes.push(`YARA:${match.rule}`)
+  }
+  return codes.join(', ')
 }
 
 function formatBytes(bytes: number): string {

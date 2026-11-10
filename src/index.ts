@@ -1,4 +1,4 @@
-export type { BinaryReport, BinaryFormat, Architecture, OperatingSystem, Endianness, SectionInfo, ImportInfo, ExportInfo, StringInfo, DetectedItem, CapabilityInfo, SecurityInfo, BinaryMetrics, AnalysisGraphs, SimilarityResult } from './types/index.js'
+export type { BinaryReport, BinaryFormat, Architecture, OperatingSystem, Endianness, SectionInfo, ImportInfo, ExportInfo, StringInfo, DetectedItem, CapabilityInfo, SecurityInfo, BinaryMetrics, AnalysisGraphs, SimilarityResult, YaraMatch, YaraStringMatch } from './types/index.js'
 export type { Plugin, PluginContext, PluginManager } from './types/plugin.js'
 
 export { analyze } from './analyze.js'
@@ -13,3 +13,5 @@ export { toScanTable, toScanJSON, toScanCSV, toScanMarkdown, toScanHTML, toScanS
 
 export { scan } from './scan/index.js'
 export type { ScanOptions, ScanSummary, ScanFile, ScanFlag, ScanError, ScanRisk, ScanFlagSeverity } from './scan/index.js'
+
+export { YaraScanner } from './yara/index.js'

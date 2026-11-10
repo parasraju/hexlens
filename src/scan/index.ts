@@ -1,8 +1,9 @@
-import { open, readdir, stat } from 'node:fs/promises'
+import { open, readFile, readdir, stat } from 'node:fs/promises'
 import { basename, join, relative, resolve, sep } from 'node:path'
-import type { BinaryFormat, BinaryReport } from '../types/index.js'
+import type { BinaryFormat, BinaryReport, YaraMatch } from '../types/index.js'
 import { detectFormat } from '../parsers/format-detector.js'
 import { analyze } from '../analyze.js'
+import { YaraScanner } from '../yara/index.js'
 
 export type ScanRisk = 'high' | 'medium' | 'low' | 'none'
 export type ScanFlagSeverity = 'high' | 'medium' | 'low'
@@ -19,6 +20,8 @@ export interface ScanFile {
   report: BinaryReport
   flags: ScanFlag[]
   risk: ScanRisk
+  /** Present only when the scan was run with YARA rules; empty when nothing matched. */
+  yaraMatches?: YaraMatch[]
 }
 
 export interface ScanError {
@@ -32,6 +35,8 @@ export interface ScanSummary {
   skipped: number
   errors: ScanError[]
   durationMs: number
+  /** Absolute path of the YARA rule file, when one was used. */
+  yaraRules?: string
 }
 
 export interface ScanOptions {
@@ -41,6 +46,8 @@ export interface ScanOptions {
   includeUnknown?: boolean
   /** Include dotfiles and dot-directories. Defaults to false. */
   includeHidden?: boolean
+  /** Path to a YARA rule file. Matches are attached to each file result. */
+  yara?: string
   /** Number of files analyzed in parallel. Defaults to 4. */
   concurrency?: number
 }
@@ -77,6 +84,8 @@ export async function scan(path: string, options: ScanOptions = {}): Promise<Sca
     throw new Error(`Scan path is not a file or directory: ${path}`)
   }
 
+  const yaraScanner = options.yara ? await YaraScanner.load(options.yara) : null
+
   const candidates = info.isFile()
     ? [{ path: root, relativePath: basename(root) }]
     : await collectFiles(root, root, options)
@@ -112,12 +121,16 @@ export async function scan(path: string, options: ScanOptions = {}): Promise<Sca
       try {
         const report = await analyze(candidate.path)
         const flags = buildFlags(report)
+        const yaraMatches = yaraScanner
+          ? yaraScanner.match(await readFile(candidate.path), candidate.relativePath)
+          : undefined
         files.push({
           path: candidate.path,
           relativePath: candidate.relativePath,
           report,
           flags,
           risk: riskFromFlags(flags),
+          ...(yaraMatches ? { yaraMatches } : {}),
         })
       } catch (err) {
         errors.push({ path: candidate.relativePath, message: errorMessage(err) })
@@ -136,6 +149,7 @@ export async function scan(path: string, options: ScanOptions = {}): Promise<Sca
     skipped,
     errors,
     durationMs: Date.now() - started,
+    ...(yaraScanner ? { yaraRules: yaraScanner.path } : {}),
   }
 }
 

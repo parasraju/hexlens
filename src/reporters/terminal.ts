@@ -1,4 +1,4 @@
-import type { BinaryReport, SectionInfo, CapabilityInfo, DetectedItem } from '../types/index.js'
+import type { BinaryReport, SectionInfo, CapabilityInfo, DetectedItem, YaraMatch } from '../types/index.js'
 
 export function toTerminal(report: BinaryReport): string {
   const lines: string[] = []
@@ -121,6 +121,29 @@ export function toTerminal(report: BinaryReport): string {
   lines.push(sep)
   lines.push('')
 
+  return lines.join('\n')
+}
+
+export function formatYaraMatches(matches: YaraMatch[]): string {
+  const lines: string[] = []
+  const sep = '─'.repeat(60)
+
+  lines.push('')
+  lines.push(` ${color('red', 'YARA Matches')}`)
+  lines.push(sep)
+
+  if (matches.length === 0) {
+    lines.push('  No YARA rules matched.')
+  } else {
+    for (const match of matches) {
+      lines.push(`  ${match.rule}`)
+      for (const string of match.strings.slice(0, 5)) {
+        lines.push(`    ${string.identifier} @ 0x${string.offset.toString(16)} (${string.length} bytes)`)
+      }
+    }
+  }
+
+  lines.push('')
   return lines.join('\n')
 }
 

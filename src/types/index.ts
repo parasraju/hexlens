@@ -102,6 +102,23 @@ export interface SimilarityResult {
   matchedBinary?: string
 }
 
+export interface YaraStringMatch {
+  identifier: string
+  offset: number
+  length: number
+}
+
+export interface YaraMatch {
+  /** File the rule matched, as it appears in the report (relative path in batch scans). */
+  file: string
+  /** YARA rule name. */
+  rule: string
+  /** Rule metadata, stringified by the libyara wrapper. */
+  meta: Record<string, string>
+  /** String identifiers and offsets that caused the rule to match. */
+  strings: YaraStringMatch[]
+}
+
 export interface BinaryReport {
   file: FileInfo
   format: BinaryFormat

@@ -33,6 +33,7 @@ const report = await analyze("program.exe")
 - **Binary Metrics** — Function count estimation, section entropy, complexity scoring, optimization level estimation
 - **Graph Generation** — Import graphs, dependency graphs, section graphs (Graphviz, Mermaid, JSON export)
 - **Batch Scanning** — Triage a whole folder in one flag-aware summary table (`hexlens scan ./samples/`)
+- **YARA Rule Scanning** — Match every scanned file against a YARA rule file (`--yara rules.yar`), backed by libyara compiled to WebAssembly
 - **Interactive TUI** — Browse any analysis with a keyboard-driven terminal UI (`hexlens tui`)
 - **Plugin System** — Extend HexLens with custom detectors without modifying the core
 - **Multiple Reporters** — Terminal, JSON, Markdown, HTML, SARIF, YAML, CSV
@@ -72,6 +73,9 @@ npx hexlens scan ./samples/ --format json --output scan.json
 # Include files whose format is not recognized
 npx hexlens scan ./samples/ --all
 
+# Match files against YARA rules
+npx hexlens scan ./samples/ --yara rules.yar
+
 # See all formats
 npx hexlens formats
 ```
@@ -91,6 +95,66 @@ JSON, CSV, Markdown, HTML, YAML, or SARIF reporters.
 # Scan a single binary too
 npx hexlens scan program.exe
 ```
+
+### YARA Rule Scanning
+
+Pass `--yara <file>` to `scan` or `analyze` to match file contents against a YARA
+rule file. Rules are loaded and compiled once at the start of the run. A missing,
+unreadable, or invalid rule file aborts with a non-zero exit code instead of
+scanning without rules.
+
+```yara
+rule HexLens_Test_Marker
+{
+    meta:
+        author = "you"
+    strings:
+        $mz = "MZ"
+        $marker = "HEXLENS_YARA_TEST"
+    condition:
+        $mz at 0 and $marker
+}
+```
+
+```bash
+npx hexlens scan ./samples/ --yara rules.yar
+```
+
+Matched rule names appear in the `FLAGS` column as `YARA:<rule>` and are reported
+per file by `--format json`:
+
+```jsonc
+{
+  "path": "marked.exe",
+  "risk": "medium",
+  "flags": [ /* ... */ ],
+  "report": { /* ... */ },
+  "yaraMatches": [
+    {
+      "file": "marked.exe",
+      "rule": "HexLens_Test_Marker",
+      "meta": { "author": "you" },
+      "strings": [
+        { "identifier": "$marker", "offset": 512, "length": 17 }
+      ]
+    }
+  ]
+}
+```
+
+For a single binary, matched rule names are printed after the report:
+
+```bash
+npx hexlens analyze program.exe --yara rules.yar
+```
+
+YARA scanning uses [`libyara-wasm`](https://www.npmjs.com/package/libyara-wasm),
+a WebAssembly build of libyara. Text strings, hex strings, regular expressions,
+string modifiers (`ascii`, `wide`, `nocase`, `fullword`), metadata, tags, and
+normal YARA conditions are supported, and bundled modules such as `pe` are
+available. `include` directives are not supported by the WebAssembly build, so
+rule files must be self-contained. Terminal and JSON are the supported YARA
+outputs; the other reporters do not add dedicated YARA sections.
 
 ## Images 
 
@@ -141,12 +205,16 @@ console.log(report.metadata.dex)   // { version: "035", classes, methods, string
 ```ts
 import { scan } from "hexlens"
 
-const summary = await scan("./samples", { recursive: true })
+const summary = await scan("./samples", { recursive: true, yara: "rules.yar" })
 
-for (const { relativePath, risk, flags } of summary.files) {
+for (const { relativePath, risk, flags, yaraMatches } of summary.files) {
   console.log(relativePath, risk, flags.map(flag => flag.code).join(", "))
+  console.log(yaraMatches?.map(match => match.rule))
 }
 ```
+
+`yaraMatches` is only present when a rule file is passed; it is an empty array for
+files that did not match.
 
 ### Report Structure
 
@@ -215,6 +283,8 @@ src/
 ├── tui.ts             # Interactive terminal UI (hexlens tui)
 ├── scan/              # Batch folder scanning
 │   └── index.ts
+├── yara/              # YARA rule loading and matching
+│   └── index.ts
 ├── types/             # TypeScript type definitions
 │   ├── index.ts       # BinaryReport, SectionInfo, etc.
 │   └── plugin.ts      # Plugin/Detector interfaces
@@ -263,3 +333,7 @@ src/
 ## License
 
 MIT
+
+## Changelog
+
+- **0.4.0** — YARA rule scanning via `--yara` for `scan` and `analyze`.
