@@ -147,3 +147,97 @@ export interface BinaryReport {
   entryPoint: number
   timestamp: number
 }
+
+export interface DiffFileSide {
+  path: string
+  name: string
+  size: number
+  sha256: string
+  sha1: string
+  md5: string
+}
+
+export interface DiffByteChange {
+  offset: number
+  /** Hex byte in file A, or null when the file ends before this offset. */
+  a: string | null
+  /** Hex byte in file B, or null when the file ends before this offset. */
+  b: string | null
+  /** Hex bytes around the offset. The byte at the offset is wrapped in brackets. */
+  contextA: string
+  contextB: string
+}
+
+export interface DiffBytes {
+  sizeA: number
+  sizeB: number
+  identical: boolean
+  differingBytes: number
+  /** Share of matching bytes across the longer file, 0–100, two decimal places. */
+  similarity: number
+  /** The first differing offsets, at most 10. */
+  differences: DiffByteChange[]
+}
+
+export interface DiffNameSize {
+  name: string
+  size: number
+}
+
+export interface DiffSectionChange {
+  name: string
+  sizeA: number
+  sizeB: number
+}
+
+export interface DiffDetectionSide {
+  name: string
+  confidence: number
+}
+
+export interface DiffDetection {
+  changed: boolean
+  /** Null when this file's report has no detection. */
+  a: DiffDetectionSide | null
+  b: DiffDetectionSide | null
+}
+
+export interface DiffImphash {
+  /** True only when both reports include an imphash and the values are equal. */
+  same: boolean
+  /** Null when file A has no imphash. */
+  a: string | null
+  /** Null when file B has no imphash. */
+  b: string | null
+  missingA: boolean
+  missingB: boolean
+}
+
+export interface DiffValueChange<T> {
+  changed: boolean
+  a: T
+  b: T
+}
+
+export interface DiffReportComparison {
+  imphash: DiffImphash
+  imports: { added: string[]; removed: string[] }
+  exports: { added: string[]; removed: string[] }
+  sections: { added: DiffNameSize[]; removed: DiffNameSize[]; changed: DiffSectionChange[] }
+  strings: { added: string[]; removed: string[]; addedTotal: number; removedTotal: number }
+  compiler: DiffDetection
+  packer: DiffDetection
+  language: DiffDetection
+  entryPoint: DiffValueChange<number>
+  format: DiffValueChange<BinaryFormat>
+  architecture: DiffValueChange<Architecture>
+}
+
+export interface BinaryDiff {
+  /** True when the file bytes are identical. */
+  identical: boolean
+  fileA: DiffFileSide
+  fileB: DiffFileSide
+  bytes: DiffBytes
+  report: DiffReportComparison
+}

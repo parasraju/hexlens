@@ -1,6 +1,6 @@
 {
   "name": "hexlens",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Open Source Binary Intelligence & Reverse Engineering Framework",
   "homepage": "https://github.com/parasraju/hexlens#readme",
   "repository": {
@@ -54,7 +54,9 @@
     "batch-scan",
     "tui",
     "yara",
-    "threat-hunting"
+    "threat-hunting",
+    "binary-diff",
+    "binary-diffing"
   ],
   "license": "MIT",
   "dependencies": {

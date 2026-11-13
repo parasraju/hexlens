@@ -34,6 +34,7 @@ const report = await analyze("program.exe")
 - **Graph Generation** — Import graphs, dependency graphs, section graphs (Graphviz, Mermaid, JSON export)
 - **Batch Scanning** — Triage a whole folder in one flag-aware summary table (`hexlens scan ./samples/`)
 - **YARA Rule Scanning** — Match every scanned file against a YARA rule file (`--yara rules.yar`), backed by libyara compiled to WebAssembly
+- **Binary Diff** — Compare two binaries by raw bytes and by analysis report (`hexlens diff old.bin new.bin`)
 - **Interactive TUI** — Browse any analysis with a keyboard-driven terminal UI (`hexlens tui`)
 - **Plugin System** — Extend HexLens with custom detectors without modifying the core
 - **Multiple Reporters** — Terminal, JSON, Markdown, HTML, SARIF, YAML, CSV
@@ -75,6 +76,12 @@ npx hexlens scan ./samples/ --all
 
 # Match files against YARA rules
 npx hexlens scan ./samples/ --yara rules.yar
+
+# Compare two binaries (byte diff and report diff)
+npx hexlens diff old.bin new.bin
+
+# Write the same diff as JSON
+npx hexlens diff old.bin new.bin --format json --output diff.json
 
 # See all formats
 npx hexlens formats
@@ -156,6 +163,123 @@ available. `include` directives are not supported by the WebAssembly build, so
 rule files must be self-contained. Terminal and JSON are the supported YARA
 outputs; the other reporters do not add dedicated YARA sections.
 
+### Binary diff — compare two binaries
+
+`hexlens diff` is a binary diff of two files. It compares two binaries byte for
+byte, then runs `analyze()` on each file and lists what changed in the reports.
+Binary diffing here means raw bytes plus the analysis report (imphash, imports,
+exports, sections, strings, compiler, language, packer, and entry point).
+
+```bash
+hexlens diff old.bin new.bin
+```
+
+Exit status follows `diff(1)`, so a CI job can tell identical files from a real change:
+
+- `0` — the bytes are identical. Output includes an `identical` line and both files' SHA-256 hashes.
+- `1` — one or more bytes differ.
+- `2` — a file is missing, unreadable, or not a regular file; the format is not `terminal` or `json`; or `--output` could not be written.
+
+Passing fewer than two file arguments is also an error and exits non-zero
+(`error: missing required argument 'file-b'`).
+
+`radiff2` (radare2) does binary diffing, including a disassembly diff, and needs
+the radare2 toolchain. BinDiff (zynamics) matches functions across two binaries
+and needs IDA. hexlens diff needs neither: it hashes and walks the raw bytes,
+then uses the parsers already in this package (PE, ELF, Mach-O, WASM, DEX, and
+.NET). It does not match basic blocks, diff control flow, or disassemble, and
+it does not aim to replace radiff2 or BinDiff.
+
+The sample below is two real minimal WebAssembly modules. `old.bin` (22 bytes)
+imports `env.print`. `new.bin` (33 bytes) imports `env.print` and `env.extra`.
+This is the terminal output from `hexlens diff old.bin new.bin` on that pair
+(exit code 1):
+
+```
+ HexLens Diff — old.bin vs new.bin
+────────────────────────────────────────────────────────────
+ A: old.bin  22 bytes
+    sha256 6febb11c24addaa7bee421ef6299edd8ed981eabe17501dcdc220167d884b4af
+ B: new.bin  33 bytes
+    sha256 c94ddf4617e708853496ff1b5d5a4e82d84f2e1ecb385064c27f0d765a389935
+
+ Files differ: 13 bytes (60.61% similar)
+
+ Byte differences
+────────────────────────────────────────────────────────────
+  First 10 of 13 differing offsets:
+  0x00000009
+    A: 00 00 00 02 [0c] 01 03 65 6e
+    B: 00 00 00 02 [17] 02 03 65 6e
+  0x0000000a
+    A: 00 00 02 0c [01] 03 65 6e 76
+    B: 00 00 02 17 [02] 03 65 6e 76
+  0x00000016
+    A: (past end)
+    B: 69 6e 74 00 [03] 65 6e 76 05
+  0x00000017
+    A: (past end)
+    B: 6e 74 00 03 [65] 6e 76 05 65
+  0x00000018
+    A: (past end)
+    B: 74 00 03 65 [6e] 76 05 65 78
+  0x00000019
+    A: (past end)
+    B: 00 03 65 6e [76] 05 65 78 74
+  0x0000001a
+    A: (past end)
+    B: 03 65 6e 76 [05] 65 78 74 72
+  0x0000001b
+    A: (past end)
+    B: 65 6e 76 05 [65] 78 74 72 61
+  0x0000001c
+    A: (past end)
+    B: 6e 76 05 65 [78] 74 72 61 00
+  0x0000001d
+    A: (past end)
+    B: 76 05 65 78 [74] 72 61 00
+
+ Report
+────────────────────────────────────────────────────────────
+ Format: unchanged (WASM)
+ Architecture: unchanged (Unknown)
+ Imphash: different
+  A: c89fde4fe83607ca1a53e4b7684f3259
+  B: eeb642df4eeb2813cf617153e73c6da9
+ Imports added (1):
+  + env.extra
+ Imports removed: none
+ Exports added: none
+ Exports removed: none
+ Sections added: none
+ Sections removed: none
+ Sections changed (1):
+  ~ import  12 -> 23 bytes
+ Strings added (1):
+  + extra
+ Strings removed: none
+ Compiler: unchanged (not detected)
+ Language: unchanged (not detected)
+ Packer: unchanged (not detected)
+ Entry point: unchanged (0x00000000)
+```
+
+`--format json` prints that same diff as JSON: sizes, hashes, byte stats
+(`differingBytes`, `similarity`, and the first 10 offsets with hex context),
+plus `added` / `removed` / `changed` arrays for each report category.
+`--output <file>` writes the terminal text or the JSON to a file instead of
+stdout. Markdown, HTML, CSV, YAML, and SARIF are not diff formats in this
+release.
+
+String changes list at most 20 values and then a count of the rest. The
+comparison uses the strings `analyze()` already returns. When a report has no
+imphash, compiler, language, or packer, the diff says that field is missing or
+not detected.
+
+An identical copy of `old.bin` prints `Files are identical.` and both SHA-256
+lines (`6febb11c24addaa7bee421ef6299edd8ed981eabe17501dcdc220167d884b4af`) and
+exits 0.
+
 ## Images 
 
 <img width="1094" height="572" alt="Screenshot 2026-08-16 225046" src="https://github.com/user-attachments/assets/c76474c4-ba66-426e-9c7d-8bb691296919" />
@@ -215,6 +339,25 @@ for (const { relativePath, risk, flags, yaraMatches } of summary.files) {
 
 `yaraMatches` is only present when a rule file is passed; it is an empty array for
 files that did not match.
+
+### Binary diff API
+
+```ts
+import { diff } from "hexlens"
+
+const result = await diff("old.bin", "new.bin")
+
+console.log(result.identical)
+console.log(result.bytes.differingBytes)
+console.log(result.bytes.similarity)
+console.log(result.report.imports.added)
+console.log(result.report.imphash)
+```
+
+On the WebAssembly pair in [Binary diff](#binary-diff--compare-two-binaries),
+`result.bytes.differingBytes` is `13`, `result.bytes.similarity` is `60.61`,
+and `result.report.imports.added` is `["env.extra"]`. `result.identical` is
+`true` only when the bytes match, which is also exit code 0 on the CLI.
 
 ### Report Structure
 
@@ -281,6 +424,8 @@ src/
 ├── analyze.ts         # Core analyze() implementation
 ├── cli.ts             # CLI entry point
 ├── tui.ts             # Interactive terminal UI (hexlens tui)
+├── diff/              # Binary diff (bytes + report)
+│   └── index.ts
 ├── scan/              # Batch folder scanning
 │   └── index.ts
 ├── yara/              # YARA rule loading and matching
@@ -320,7 +465,8 @@ src/
 │   ├── sarif.ts
 │   ├── yaml.ts
 │   ├── csv.ts
-│   └── scan.ts        # Batch triage table / bundle reporters
+│   ├── scan.ts        # Batch triage table / bundle reporters
+│   └── diff.ts        # Binary diff terminal and JSON output
 └── utils/             # Shared utilities
     ├── buffer-reader.ts
     ├── hash.ts        # sha/md5 + imphash
@@ -337,3 +483,7 @@ MIT
 ## Changelog
 
 - **0.4.0** — YARA rule scanning via `--yara` for `scan` and `analyze`.
+
+## 0.5.0
+
+Binary diff (`hexlens diff a.bin b.bin`) — byte-level and report-level comparison.

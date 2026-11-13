@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
-import { analyze, scan } from './index.js'
+import { analyze, diffOrExit, scan } from './index.js'
 import { runTUI } from './tui.js'
-import { toJSON, toMarkdown, toTerminal, toHTML, toSARIF, toYAML, toCSV } from './reporters/index.js'
+import { toJSON, toMarkdown, toTerminal, toHTML, toSARIF, toYAML, toCSV, toDiffJSON, toDiffTerminal } from './reporters/index.js'
 import { formatYaraMatches } from './reporters/terminal.js'
 import { formatScan } from './reporters/scan.js'
 import { YaraScanner } from './yara/index.js'
@@ -14,7 +14,7 @@ const program = new Command()
 program
   .name('hexlens')
   .description('Binary Intelligence & Reverse Engineering Framework')
-  .version('0.4.0')
+  .version('0.5.0')
 
 program
   .command('analyze')
@@ -119,6 +119,45 @@ program
       console.error('Scan failed:', err instanceof Error ? err.message : err)
       process.exit(1)
     }
+  })
+
+program
+  .command('diff')
+  .description('Compare two binaries (byte diff and report diff)')
+  .argument('<file-a>', 'Path to the first binary')
+  .argument('<file-b>', 'Path to the second binary')
+  .option('-f, --format <format>', 'Output format (terminal, json)', 'terminal')
+  .option('-o, --output <file>', 'Output file path')
+  .option('--pretty', 'Pretty-print JSON', true)
+  .action(async (fileA: string, fileB: string, options: { format: string; output?: string; pretty: boolean }) => {
+    if (options.format !== 'terminal' && options.format !== 'json') {
+      console.error(`Diff failed: unsupported format "${options.format}" (supported: terminal, json)`)
+      process.exit(2)
+    }
+
+    const outcome = await diffOrExit(resolve(fileA), resolve(fileB))
+    if (outcome.exitCode === 2) {
+      console.error(`Diff failed: ${outcome.error}`)
+      process.exit(2)
+    }
+
+    const output = options.format === 'json'
+      ? toDiffJSON(outcome.diff, options.pretty)
+      : toDiffTerminal(outcome.diff)
+
+    try {
+      if (options.output) {
+        await writeFile(resolve(options.output), output, 'utf-8')
+        console.log(`Report saved to ${options.output}`)
+      } else {
+        console.log(output)
+      }
+    } catch (err) {
+      console.error(`Diff failed: cannot write ${options.output}: ${err instanceof Error ? err.message : err}`)
+      process.exit(2)
+    }
+
+    process.exitCode = outcome.exitCode
   })
 
 program
