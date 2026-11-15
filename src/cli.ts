@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander'
 import { analyze, diffOrExit, scan } from './index.js'
+import { startMcpServer } from './mcp/index.js'
 import { runTUI } from './tui.js'
 import { toJSON, toMarkdown, toTerminal, toHTML, toSARIF, toYAML, toCSV, toDiffJSON, toDiffTerminal } from './reporters/index.js'
 import { formatYaraMatches } from './reporters/terminal.js'
@@ -159,6 +160,18 @@ program
     }
 
     process.exitCode = outcome.exitCode
+  })
+
+program
+  .command('mcp')
+  .description('Serve analyze, scan, and diff to an AI agent over stdio (Model Context Protocol)')
+  .action(async () => {
+    try {
+      await startMcpServer()
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err)
+      process.exit(1)
+    }
   })
 
 program

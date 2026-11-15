@@ -1,7 +1,7 @@
 {
   "name": "hexlens",
   "version": "0.6.0",
-  "description": "Open Source Binary Intelligence & Reverse Engineering Framework",
+  "description": "Open Source Binary Intelligence & Reverse Engineering Framework. Use it from your AI coding agent via MCP.",
   "homepage": "https://github.com/parasraju/hexlens#readme",
   "repository": {
     "type": "git",
@@ -56,10 +56,13 @@
     "yara",
     "threat-hunting",
     "binary-diff",
-    "binary-diffing"
+    "binary-diffing",
+    "mcp",
+    "model-context-protocol"
   ],
   "license": "MIT",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "commander": "^12.1.0",
     "libyara-wasm": "^1.2.1",
     "terminal-kit": "^3.1.4"

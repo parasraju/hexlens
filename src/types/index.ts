@@ -241,3 +241,43 @@ export interface BinaryDiff {
   bytes: DiffBytes
   report: DiffReportComparison
 }
+
+export type McpAnalyzeResult = BinaryReport & {
+  yaraMatches?: YaraMatch[]
+}
+
+export type McpDiffResult = BinaryDiff
+
+export interface McpScanFlag {
+  code: string
+  label: string
+  severity: 'high' | 'medium' | 'low'
+}
+
+export interface McpScanFileSummary {
+  path: string
+  relativePath: string
+  format: BinaryFormat
+  architecture: Architecture
+  size: number
+  sha256: string
+  imphash: string | null
+  compiler: string | null
+  packer: string | null
+  language: string | null
+  risk: 'high' | 'medium' | 'low' | 'none'
+  flags: McpScanFlag[]
+}
+
+export interface McpScanError {
+  path: string
+  message: string
+}
+
+export interface McpScanResult {
+  root: string
+  files: McpScanFileSummary[]
+  skipped: number
+  errors: McpScanError[]
+  durationMs: number
+}
