@@ -540,9 +540,11 @@ MIT
 
 ## Changelog
 
-### 0.6.0
+## 0.7.0
 
 MCP mode (`hexlens mcp`) — analyze, scan, and diff binaries from your AI agent via 3 MCP tools.
+
+### 0.6.0
 
 - ELF32 and ELF64 headers are read at the offsets from the System V ABI. `e_entry` is reported, section names resolve, and dynamic imports, `DT_NEEDED` libraries, and symbol tables are recovered.
 - PE32 `ImageBase` and `DllCharacteristics` are read after `BaseOfData`. Mach-O load commands are walked by `cmdsize`, including 64-bit segments and `LC_MAIN`.
