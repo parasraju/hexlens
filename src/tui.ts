@@ -1,5 +1,6 @@
 import terminalKit from 'terminal-kit'
 import type { BinaryReport } from './types/index.js'
+import { securityChecks } from './detectors/security.js'
 
 const term = terminalKit.terminal
 
@@ -178,6 +179,12 @@ function renderOverview(report: BinaryReport): string[] {
   lines.push(`  Architecture:  ${report.architecture}`)
   lines.push(`  OS:            ${report.operatingSystem}`)
   lines.push(`  Size:          ${report.file.size.toLocaleString()} bytes`)
+  if (report.format === 'Unknown') {
+    lines.push('')
+    lines.push(`${YELLOW}  Not a recognized binary.${RESET}`)
+    lines.push('  This file does not match PE, ELF, Mach-O, WASM, DEX, or .NET.')
+    return lines
+  }
   lines.push(`  Entry Point:   0x${report.entryPoint.toString(16).padStart(8, '0')}`)
   lines.push(`  Stripped:      ${report.stripped}`)
   lines.push(`  SHA256:        ${report.file.sha256}`)
@@ -284,21 +291,17 @@ function renderCapabilities(report: BinaryReport): string[] {
 }
 
 function renderSecurity(report: BinaryReport): string[] {
+  if (report.format === 'Unknown') return ['Not a recognized binary.']
   if (!report.security) return ['No security data available.']
-  const sec = report.security
-  const checks: [string, boolean][] = [
-    ['ASLR', sec.aslr], ['DEP', sec.dep], ['CFG', sec.cfg], ['NX', sec.nx],
-    ['PIE', sec.pie], ['RELRO', sec.relro], ['Stack Canaries', sec.stackCanaries],
-    ['SafeSEH', sec.safeSEH], ['Signed', sec.signed],
-    ['Timestamp Anomaly', sec.timestampAnomaly], ['Overlay', sec.overlay],
-  ]
+  const checks = securityChecks(report.format, report.security)
+  if (checks.length === 0) return ['No format-specific security checks for this file.']
   const lines: string[] = [`${BOLD}${'Feature'.padEnd(20)} Status${RESET}`]
-  for (const [name, enabled] of checks) {
-    const mark = enabled ? `${GREEN}✓${RESET}` : `${RED}✗${RESET}`
-    lines.push(`${name.padEnd(20)} ${mark}`)
+  for (const check of checks) {
+    const mark = check.enabled ? `${GREEN}✓${RESET}` : `${RED}✗${RESET}`
+    lines.push(`${check.name.padEnd(20)} ${mark}`)
   }
-  if (sec.certificateValid !== null) {
-    lines.push(`Certificate Valid ${sec.certificateValid}`)
+  if (report.security.certificateValid !== null) {
+    lines.push(`Certificate Valid ${report.security.certificateValid}`)
   }
   return lines
 }

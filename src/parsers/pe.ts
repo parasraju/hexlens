@@ -13,6 +13,7 @@ interface PEOptionalHeader {
   subsystem: number
   dllCharacteristics: number
   numberOfRvaAndSizes: number
+  linkerVersion: string
 }
 
 export interface PEData {
@@ -27,32 +28,47 @@ export interface PEData {
   isDLL: boolean
   isDriver: boolean
   resources: { name: string; type: string; size: number; offset: number }[]
+  linkerVersion: string
+  numberOfSymbols: number
+  /** IMAGE_DIRECTORY_ENTRY_SECURITY size is non-zero. */
+  hasCertificate: boolean
+  fileAlignment: number
+  /** End of the COFF symbol/string table and the certificate, when present. */
+  auxFileEnd: number
 }
 
 export function parsePE(data: Uint8Array): PEData | null {
+  try {
+    return parsePEInner(data)
+  } catch {
+    return null
+  }
+}
+
+function parsePEInner(data: Uint8Array): PEData | null {
   if (data.length < 0x40) return null
 
   const reader = BufferReader.from(data)
 
   const peOffset = reader.peekU32(0x3C, true)
-  if (peOffset + 4 > data.length) return null
+  if (!reader.inBounds(peOffset, 24)) return null
 
   const peSig = reader.peekU32(peOffset, true)
   if (peSig !== 0x00004550) return null
 
-  reader.seek(peOffset + 4)
-  const machine = reader.readU16(true)
-  const numberOfSections = reader.readU16(true)
-  const timestamp = reader.readU32(true)
-  reader.skip(8)
-  const sizeOfOptionalHeader = reader.readU16(true)
-  const characteristics = reader.readU16(true)
+  const machine = reader.peekU16(peOffset + 4, true)
+  const numberOfSections = reader.peekU16(peOffset + 6, true)
+  const timestamp = reader.peekU32(peOffset + 8, true)
+  const pointerToSymbols = reader.peekU32(peOffset + 12, true)
+  const numberOfSymbols = reader.peekU32(peOffset + 16, true)
+  const sizeOfOptionalHeader = reader.peekU16(peOffset + 20, true)
+  const characteristics = reader.peekU16(peOffset + 22, true)
 
   const isDLL = (characteristics & 0x2000) !== 0
-  const isDriver = machine === 0x01C4 || machine === 0xAA64
 
+  const opt = peOffset + 24
   const optHeader: PEOptionalHeader = {
-    magic: 0,
+    magic: reader.peekU16(opt, true),
     addressOfEntryPoint: 0,
     imageBase: 0,
     sectionAlignment: 0,
@@ -62,48 +78,45 @@ export function parsePE(data: Uint8Array): PEData | null {
     subsystem: 0,
     dllCharacteristics: 0,
     numberOfRvaAndSizes: 0,
+    linkerVersion: `${reader.peekU8(opt + 2)}.${reader.peekU8(opt + 3)}`,
   }
-
-  reader.seek(peOffset + 24)
-  optHeader.magic = reader.readU16(true)
   const isPE32Plus = optHeader.magic === 0x20B
 
+  // Field offsets are from the start of the optional header.
+  // PE32 has BaseOfData at +24, so ImageBase sits at +28. PE32+ has no BaseOfData
+  // and ImageBase is an 8-byte field at +24.
+  optHeader.addressOfEntryPoint = reader.peekU32(opt + 16, true)
   if (isPE32Plus) {
-    reader.seek(peOffset + 24 + 16)
-    optHeader.addressOfEntryPoint = reader.readU32(true)
-    reader.skip(4)
-    optHeader.imageBase = Number(reader.readU64(true))
-    optHeader.sectionAlignment = reader.readU32(true)
-    optHeader.fileAlignment = reader.readU32(true)
-    reader.skip(2 + 2 + 2 + 2 + 2 + 2 + 4)
-    optHeader.sizeOfImage = reader.readU32(true)
-    optHeader.sizeOfHeaders = reader.readU32(true)
-    reader.skip(4)
-    optHeader.subsystem = reader.readU16(true)
-    optHeader.dllCharacteristics = reader.readU16(true)
-    reader.skip(8 + 8 + 8 + 8 + 4)
-    optHeader.numberOfRvaAndSizes = reader.readU32(true)
+    optHeader.imageBase = Number(reader.peekU64(opt + 24, true))
+    optHeader.sectionAlignment = reader.peekU32(opt + 32, true)
+    optHeader.fileAlignment = reader.peekU32(opt + 36, true)
+    optHeader.sizeOfImage = reader.peekU32(opt + 56, true)
+    optHeader.sizeOfHeaders = reader.peekU32(opt + 60, true)
+    optHeader.subsystem = reader.peekU16(opt + 68, true)
+    optHeader.dllCharacteristics = reader.peekU16(opt + 70, true)
+    optHeader.numberOfRvaAndSizes = reader.peekU32(opt + 108, true)
   } else {
-    reader.seek(peOffset + 24 + 16)
-    optHeader.addressOfEntryPoint = reader.readU32(true)
-    optHeader.imageBase = reader.readU32(true)
-    optHeader.sectionAlignment = reader.readU32(true)
-    optHeader.fileAlignment = reader.readU32(true)
-    reader.skip(2 + 2 + 2 + 2 + 2 + 2 + 4)
-    optHeader.sizeOfImage = reader.readU32(true)
-    optHeader.sizeOfHeaders = reader.readU32(true)
-    reader.skip(4)
-    optHeader.subsystem = reader.readU16(true)
-    optHeader.dllCharacteristics = reader.readU16(true)
-    reader.skip(4 + 4 + 4 + 4 + 4)
-    optHeader.numberOfRvaAndSizes = reader.readU32(true)
+    optHeader.imageBase = reader.peekU32(opt + 28, true)
+    optHeader.sectionAlignment = reader.peekU32(opt + 32, true)
+    optHeader.fileAlignment = reader.peekU32(opt + 36, true)
+    optHeader.sizeOfImage = reader.peekU32(opt + 56, true)
+    optHeader.sizeOfHeaders = reader.peekU32(opt + 60, true)
+    optHeader.subsystem = reader.peekU16(opt + 68, true)
+    optHeader.dllCharacteristics = reader.peekU16(opt + 70, true)
+    optHeader.numberOfRvaAndSizes = reader.peekU32(opt + 92, true)
   }
 
-  const sections: SectionInfo[] = []
-  reader.seek(peOffset + 24 + sizeOfOptionalHeader)
+  const isDriver = optHeader.subsystem === 1 && !isDLL
 
-  for (let i = 0; i < numberOfSections; i++) {
-    const name = reader.readString(8)
+  const sections: SectionInfo[] = []
+  const sectionTable = peOffset + 24 + sizeOfOptionalHeader
+  const sectionCount = Math.min(numberOfSections, 96)
+
+  for (let i = 0; i < sectionCount; i++) {
+    const off = sectionTable + i * 40
+    if (!reader.inBounds(off, 40)) break
+    reader.seek(off)
+    const name = reader.readString(8).replace(/\0+$/, '')
     const virtualSize = reader.readU32(true)
     const virtualAddress = reader.readU32(true)
     const rawSize = reader.readU32(true)
@@ -134,6 +147,21 @@ export function parsePE(data: Uint8Array): PEData | null {
   }
 
   const dataDirStart = peOffset + 24 + (isPE32Plus ? 112 : 96)
+  const certOff = reader.peekU32(dataDirStart + 4 * 8, true)
+  const certSize = reader.peekU32(dataDirStart + 4 * 8 + 4, true)
+  let auxFileEnd = 0
+  if (pointerToSymbols > 0 && numberOfSymbols > 0 && numberOfSymbols < 1_000_000) {
+    const symEnd = pointerToSymbols + numberOfSymbols * 18
+    if (symEnd > pointerToSymbols && symEnd + 4 <= data.length) {
+      const strSize = reader.peekU32(symEnd, true)
+      auxFileEnd = strSize >= 4 && symEnd + strSize <= data.length + 32
+        ? Math.min(data.length, symEnd + strSize)
+        : Math.min(data.length, symEnd)
+    }
+  }
+  if (certOff > 0 && certSize > 0 && certOff + certSize <= data.length + 32) {
+    auxFileEnd = Math.max(auxFileEnd, Math.min(data.length, certOff + certSize))
+  }
 
   const imports = extractImports(data, dataDirStart, isPE32Plus, optHeader.imageBase, sections)
   const exports_ = extractExports(data, dataDirStart, isPE32Plus, sections)
@@ -151,6 +179,11 @@ export function parsePE(data: Uint8Array): PEData | null {
     isDLL,
     isDriver,
     resources,
+    linkerVersion: optHeader.linkerVersion,
+    numberOfSymbols: pointerToSymbols === 0 ? 0 : numberOfSymbols,
+    hasCertificate: certSize > 0,
+    fileAlignment: optHeader.fileAlignment || 0x200,
+    auxFileEnd,
   }
 }
 

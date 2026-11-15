@@ -1,4 +1,6 @@
 import type { BinaryReport } from '../types/index.js'
+import { securityChecks } from '../detectors/security.js'
+import { VERSION } from '../version.js'
 
 interface SarifResult {
   ruleId: string
@@ -26,12 +28,13 @@ export function toSARIF(report: BinaryReport): string {
   }
 
   if (report.security) {
-    const sec = report.security
-    if (!sec.aslr) results.push(sarifResult('HL0002', 'error', 'ASLR is disabled'))
-    if (!sec.dep) results.push(sarifResult('HL0003', 'error', 'DEP is disabled'))
-    if (!sec.nx) results.push(sarifResult('HL0004', 'warning', 'NX is not enabled'))
-    if (sec.timestampAnomaly) results.push(sarifResult('HL0005', 'warning', 'Timestamp anomaly detected'))
-    if (sec.overlay) results.push(sarifResult('HL0006', 'note', 'Executable overlay present'))
+    const checks = securityChecks(report.format, report.security)
+    const byName = new Map(checks.map(check => [check.name, check.enabled]))
+    if (byName.get('ASLR') === false) results.push(sarifResult('HL0002', 'error', 'ASLR is disabled'))
+    if (byName.get('DEP') === false) results.push(sarifResult('HL0003', 'error', 'DEP is disabled'))
+    if (byName.get('NX') === false) results.push(sarifResult('HL0004', 'warning', 'NX is not enabled'))
+    if (byName.get('Timestamp Anomaly') === true) results.push(sarifResult('HL0005', 'warning', 'Timestamp anomaly detected'))
+    if (byName.get('Overlay') === true) results.push(sarifResult('HL0006', 'note', 'Executable overlay present'))
   }
 
   for (const cap of report.capabilities) {
@@ -53,7 +56,7 @@ export function toSARIF(report: BinaryReport): string {
     $schema: 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json',
     version: '2.1.0',
     runs: [{
-      tool: { driver: { name: 'HexLens', version: '0.3.1' } },
+      tool: { driver: { name: 'HexLens', version: VERSION } },
       artifacts: [{
         location: { uri: report.file.name },
         description: { text: `Binary analysis: ${report.format} ${report.architecture}` },

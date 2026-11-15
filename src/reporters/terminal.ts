@@ -1,4 +1,5 @@
-import type { BinaryReport, SectionInfo, CapabilityInfo, DetectedItem, YaraMatch } from '../types/index.js'
+import type { BinaryReport, CapabilityInfo, YaraMatch } from '../types/index.js'
+import { securityChecks } from '../detectors/security.js'
 
 export function toTerminal(report: BinaryReport): string {
   const lines: string[] = []
@@ -12,7 +13,21 @@ export function toTerminal(report: BinaryReport): string {
   lines.push(` OS:           ${report.operatingSystem}`)
   lines.push(` Size:         ${report.file.size.toLocaleString()} bytes`)
   lines.push(` SHA256:       ${report.file.sha256.substring(0, 32)}...`)
+  if (report.format === 'Unknown') {
+    lines.push('')
+    lines.push(` ${color('yellow', 'Not a recognized binary.')}`)
+    lines.push(' This file does not match PE, ELF, Mach-O, WASM, DEX, or .NET.')
+    lines.push('')
+    lines.push(sep)
+    lines.push('')
+    return lines.join('\n')
+  }
   lines.push(` Entry Point:  0x${report.entryPoint.toString(16).padStart(8, '0')}`)
+  if (report.metadata.truncated === true) {
+    lines.push('')
+    lines.push(` ${color('yellow', 'Truncated or malformed header.')}`)
+    lines.push(' Not enough of the file is present to parse program headers or sections.')
+  }
   lines.push(` Stripped:     ${report.stripped}`)
 
   if (report.metadata.imphash) {
@@ -91,19 +106,15 @@ export function toTerminal(report: BinaryReport): string {
   }
 
   if (report.security) {
-    lines.push('')
-    lines.push(` ${color('green', 'Security')}`)
-    lines.push(sep)
-    const sec = report.security
-    const checks = [
-      ['ASLR', sec.aslr] as [string, boolean], ['DEP', sec.dep] as [string, boolean], ['CFG', sec.cfg] as [string, boolean],
-      ['NX', sec.nx] as [string, boolean], ['PIE', sec.pie] as [string, boolean], ['RELRO', sec.relro] as [string, boolean],
-      ['Stack Canaries', sec.stackCanaries] as [string, boolean], ['SafeSEH', sec.safeSEH] as [string, boolean],
-      ['Signed', sec.signed] as [string, boolean],
-      ['TS Anomaly', sec.timestampAnomaly] as [string, boolean], ['Overlay', sec.overlay] as [string, boolean],
-    ]
-    for (const [name, enabled] of checks) {
-      lines.push(`  ${enabled ? '✓' : '✗'} ${name.padEnd(16)}`)
+    const checks = securityChecks(report.format, report.security)
+    if (checks.length > 0) {
+      lines.push('')
+      lines.push(` ${color('green', 'Security')}`)
+      lines.push(sep)
+      for (const check of checks) {
+        const mark = check.enabled ? color('green', '✓') : color('red', '✗')
+        lines.push(`  ${mark} ${check.name.padEnd(16)}`)
+      }
     }
   }
 

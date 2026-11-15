@@ -1,79 +1,56 @@
 import type { DetectedItem } from '../types/index.js'
 import type { PluginContext } from '../types/plugin.js'
+import { countNames, hasSection, hasText, symbolSet, textMarker } from './evidence.js'
 
 interface LanguageSignature {
   name: string
   score: (ctx: PluginContext) => { confidence: number; evidence: string[] }
 }
 
+const MIN_CONFIDENCE = 55
+
+const C_COMPILERS = new Set(['GCC', 'Clang', 'MinGW', 'MSVC', 'TinyCC'])
+
+function compilerName(ctx: PluginContext): string | null {
+  const value = ctx.metadata.detectedCompiler
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function cxxMangled(ctx: PluginContext): number {
+  let count = 0
+  for (const name of symbolSet(ctx)) {
+    if (name.startsWith('_Z') && name.length > 4) count++
+  }
+  return count
+}
+
+function cxxAbi(ctx: PluginContext): boolean {
+  return hasText(ctx, '__gxx_personality_v0')
+    || hasText(ctx, '__cxa_throw')
+    || hasText(ctx, '__cxa_allocate_exception')
+    || hasText(ctx, '__cxa_begin_catch')
+    || cxxMangled(ctx) > 0
+    || hasText(ctx, '_ZSt')
+    || hasText(ctx, '_ZNSt')
+    || hasText(ctx, '_ZTVN')
+}
+
 const signatures: LanguageSignature[] = [
-  {
-    name: 'C',
-    score: (ctx) => {
-      const evidence: string[] = []
-      let score = 5
-
-      if (ctx.strings?.some(s => s.value.includes('main') || s.value.includes('argc') || s.value.includes('argv'))) {
-        score += 10; evidence.push('C entry point pattern')
-      }
-      if (ctx.sections.some(s => s.name === '.text' || s.name === '.data' || s.name === '.bss')) {
-        score += 10; evidence.push('Standard C sections')
-      }
-      if (ctx.strings?.some(s => /^(printf|scanf|malloc|free|strlen|memcpy)\b/.test(s.value))) {
-        score += 15; evidence.push('C standard library functions')
-      }
-
-      return { confidence: Math.min(score, 85), evidence }
-    },
-  },
-  {
-    name: 'C++',
-    score: (ctx) => {
-      const evidence: string[] = []
-      let score = 0
-
-      if (ctx.strings?.some(s => s.value.includes('__cxa_') || s.value.includes('__gxx_'))) {
-        score += 20; evidence.push('C++ ABI symbols')
-      }
-      if (ctx.strings?.some(s => s.value.includes('vtable') || s.value.includes('VTT'))) {
-        score += 15; evidence.push('C++ vtable references')
-      }
-      if (ctx.strings?.some(s => /std::/.test(s.value))) {
-        score += 15; evidence.push('C++ standard library')
-      }
-      if (ctx.strings?.some(s => /::\w+\(/.test(s.value) && s.value.includes('('))) {
-        score += 10; evidence.push('C++ mangled names')
-      }
-      if (ctx.raw) {
-        const str = new TextDecoder().decode(ctx.raw.slice(0, Math.min(ctx.raw.length, 100000)))
-        if (str.includes('__cxa_throw') || str.includes('__cxa_begin_catch')) {
-          score += 15; evidence.push('C++ exception handling')
-        }
-      }
-
-      return { confidence: Math.min(score, 92), evidence }
-    },
-  },
   {
     name: 'Rust',
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-
-      if (ctx.strings?.some(s => s.value.includes('rust_begin_unwind') || s.value.includes('core::panic'))) {
-        score += 20; evidence.push('Rust panic mechanism')
+      if (compilerName(ctx) === 'Rustc' || hasText(ctx, 'rustc version')) {
+        score += 80; evidence.push('rustc toolchain')
       }
-      if (ctx.strings?.some(s => /::[a-z_][a-z0-9_]*::h[0-9a-f]{16}/.test(s.value))) {
-        score += 25; evidence.push('Rust hash-mangled symbols')
+      if (hasText(ctx, 'rust_begin_unwind') || hasText(ctx, 'core::panic')) {
+        score += 18; evidence.push('Rust panic runtime')
       }
-      if (ctx.strings?.some(s => s.value.endsWith('::') && s.value.length > 10)) {
-        score += 10; evidence.push('Rust module paths')
+      if (hasSection(ctx, n => n.includes('.rust'))) {
+        score += 12; evidence.push('Rust sections')
       }
-      if (ctx.sections.some(s => s.name.includes('.rust'))) {
-        score += 15; evidence.push('Rust-specific sections')
-      }
-
-      return { confidence: Math.min(score, 93), evidence }
+      return { confidence: Math.min(score, 96), evidence }
     },
   },
   {
@@ -81,21 +58,27 @@ const signatures: LanguageSignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-
-      if (ctx.strings?.some(s => s.value.startsWith('go1.') || s.value.startsWith('go2.'))) {
-        score += 25; evidence.push(`Go version: ${ctx.strings!.find(s => s.value.startsWith('go'))!.value}`)
+      const version = textMarker(ctx, 'go1.')
+      if ((version && /^go1\.\d+/.test(version)) || compilerName(ctx) === 'Go') {
+        score += 82; evidence.push(version && /^go1\.\d+/.test(version) ? version.split(' ')[0] : 'Go toolchain')
       }
-      if (ctx.strings?.some(s => /^runtime\./.test(s.value))) {
-        score += 15; evidence.push('Go runtime references')
+      if (hasSection(ctx, n => n === '.gopclntab' || n === '.go.buildinfo' || n === '.noptrdata')) {
+        score += 12; evidence.push('Go sections')
       }
-      if (ctx.strings?.some(s => s.value === 'main.main' || s.value === 'main.init')) {
-        score += 15; evidence.push('Go entry points')
+      return { confidence: Math.min(score, 96), evidence }
+    },
+  },
+  {
+    name: 'C++',
+    score: (ctx) => {
+      const evidence: string[] = []
+      let score = 0
+      const mangled = cxxMangled(ctx)
+      if (cxxAbi(ctx)) { score += 80; evidence.push(mangled > 0 ? `${mangled} Itanium C++ symbols` : 'Itanium C++ ABI') }
+      if (compilerName(ctx) === 'MSVC' && (hasText(ctx, '??_7') || hasText(ctx, '_CxxThrowException'))) {
+        score += 70; evidence.push('MSVC C++ RTTI')
       }
-      if (ctx.sections.some(s => s.name === '.go' || s.name === '.noptrdata' || s.name === '.noptrbss')) {
-        score += 15; evidence.push('Go sections')
-      }
-
-      return { confidence: Math.min(score, 95), evidence }
+      return { confidence: Math.min(score, 94), evidence }
     },
   },
   {
@@ -103,18 +86,10 @@ const signatures: LanguageSignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-
-      if (ctx.strings?.some(s => /^\$s\d+/.test(s.value) || /^_T0/.test(s.value))) {
-        score += 25; evidence.push('Swift mangled symbols')
+      if (hasSection(ctx, n => n.startsWith('__swift')) || compilerName(ctx) === 'Swift') {
+        score += 75; evidence.push('Swift metadata')
       }
-      if (ctx.strings?.some(s => s.value.includes('swift_') || s.value.includes('Swift.'))) {
-        score += 15; evidence.push('Swift runtime')
-      }
-      if (ctx.sections.some(s => s.name.startsWith('__swift'))) {
-        score += 20; evidence.push('Swift sections')
-      }
-      if (ctx.format === 'Mach-O' && ctx.architecture === 'ARM64') score += 10
-
+      if (hasText(ctx, 'swift_retain')) { score += 15; evidence.push('Swift runtime') }
       return { confidence: Math.min(score, 92), evidence }
     },
   },
@@ -123,9 +98,10 @@ const signatures: LanguageSignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => s.value.includes('Zig ') || s.value === 'zig')) score += 20
-      if (ctx.strings?.some(s => s.value.includes('std.') && (s.value.includes('mem') || s.value.includes('os')))) score += 10
-      return { confidence: Math.min(score, 75), evidence }
+      if (compilerName(ctx) === 'Zig' || hasText(ctx, 'zig_panic')) {
+        score += 75; evidence.push('Zig runtime')
+      }
+      return { confidence: Math.min(score, 88), evidence }
     },
   },
   {
@@ -133,19 +109,10 @@ const signatures: LanguageSignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /Nim\s+(?:CR|lib|rod)/.test(s.value))) score += 20
-      if (ctx.strings?.some(s => s.value.includes('nimGC') || s.value.includes('nimRaw'))) score += 15
-      return { confidence: Math.min(score, 75), evidence }
-    },
-  },
-  {
-    name: 'D',
-    score: (ctx) => {
-      const evidence: string[] = []
-      let score = 0
-      if (ctx.strings?.some(s => s.value.includes('object.d') || s.value.includes('std.'))) score += 15
-      if (ctx.strings?.some(s => /_D\w+\d+/.test(s.value))) { score += 20; evidence.push('D mangled names') }
-      return { confidence: Math.min(score, 70), evidence }
+      if (compilerName(ctx) === 'Nim' || hasText(ctx, 'NimMain') || hasText(ctx, 'nimGC_')) {
+        score += 78; evidence.push('Nim runtime')
+      }
+      return { confidence: Math.min(score, 88), evidence }
     },
   },
   {
@@ -153,14 +120,45 @@ const signatures: LanguageSignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => s.value.includes('Borland') || s.value.includes('Delphi'))) score += 20
-      if (ctx.metadata.peData) {
-        const pe = ctx.metadata.peData as any
-        if (pe?.imports?.some((i: any) => i.module?.startsWith('borlndmm') || i.module === 'System')) {
-          score += 20; evidence.push('Borland/Delphi runtime')
-        }
+      if (compilerName(ctx) === 'Delphi' || hasText(ctx, 'Embarcadero') || hasText(ctx, 'Software\\Borland')) {
+        score += 75; evidence.push('Delphi/Borland runtime')
       }
-      return { confidence: Math.min(score, 85), evidence }
+      return { confidence: Math.min(score, 88), evidence }
+    },
+  },
+  {
+    name: 'C',
+    score: (ctx) => {
+      const evidence: string[] = []
+      let score = 0
+      const compiler = compilerName(ctx)
+      const other = compiler === 'Rustc' || compiler === 'Go' || compiler === 'Zig' || compiler === 'Swift' || compiler === 'Nim' || compiler === 'Delphi'
+      if (!other && !cxxAbi(ctx) && compiler && C_COMPILERS.has(compiler)) {
+        score += 74
+        evidence.push(`${compiler} C toolchain`)
+      }
+      const symbols = symbolSet(ctx)
+      const libc = countNames(symbols, ['printf', 'puts', 'fprintf', 'malloc', 'free', 'memcpy', 'strlen', 'fopen', 'scanf', 'sprintf'])
+      if (!cxxAbi(ctx) && libc > 0) {
+        score += Math.min(18, libc * 6)
+        evidence.push(`${libc} C standard library symbols`)
+      }
+      if (hasText(ctx, 'GNU C') && !hasText(ctx, 'GNU C++') && !cxxAbi(ctx)) {
+        score += 8
+        evidence.push('GNU C language tag')
+      }
+      return { confidence: Math.min(score, 92), evidence }
+    },
+  },
+  {
+    name: 'D',
+    score: (ctx) => {
+      const evidence: string[] = []
+      let score = 0
+      if (hasText(ctx, '_Dmain') || hasText(ctx, '_d_assert')) {
+        score += 75; evidence.push('D runtime')
+      }
+      return { confidence: Math.min(score, 86), evidence }
     },
   },
   {
@@ -168,9 +166,10 @@ const signatures: LanguageSignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => s.value.includes('Crystal') || s.value.includes('crystal:'))) score += 20
-      if (ctx.strings?.some(s => s.value.includes('__crystal_'))) { score += 15; evidence.push('Crystal runtime') }
-      return { confidence: Math.min(score, 70), evidence }
+      if (hasText(ctx, '__crystal_main') || hasText(ctx, 'Crystal::')) {
+        score += 75; evidence.push('Crystal runtime')
+      }
+      return { confidence: Math.min(score, 86), evidence }
     },
   },
   {
@@ -178,12 +177,10 @@ const signatures: LanguageSignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => s.value.includes('Odin ') || s.value.includes('odin_'))) score += 15
-      if (ctx.raw) {
-        const str = new TextDecoder().decode(ctx.raw.slice(0, Math.min(ctx.raw.length, 50000)))
-        if (str.includes('Odin ') || str.includes('runtime.default_context')) score += 10
+      if (hasText(ctx, 'runtime.default_context') || hasText(ctx, 'odin_rt')) {
+        score += 70; evidence.push('Odin runtime')
       }
-      return { confidence: Math.min(score, 60), evidence }
+      return { confidence: Math.min(score, 82), evidence }
     },
   },
   {
@@ -191,25 +188,21 @@ const signatures: LanguageSignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /\bNASM\b|\bFASM\b|\bMASM\b|\bGAS\b/.test(s.value))) score += 20
-      if (ctx.metrics) {
-        const m = ctx.metrics
-        if (m.functionCount < 50 && m.averageFunctionSize < 50) { score += 10; evidence.push('Small functions typical of asm') }
-      }
-      return { confidence: Math.min(score, 60), evidence }
+      const banner = textMarker(ctx, 'NASM') ?? textMarker(ctx, 'The Netwide Assembler')
+      if (banner) { score += 70; evidence.push(banner) }
+      return { confidence: Math.min(score, 80), evidence }
     },
   },
 ]
 
 export function detectLanguage(ctx: PluginContext): DetectedItem | null {
   let best: DetectedItem | null = null
-
   for (const sig of signatures) {
     const result = sig.score(ctx)
-    if (result.confidence > 10 && (!best || result.confidence > best.confidence)) {
+    if (result.confidence < MIN_CONFIDENCE || result.evidence.length === 0) continue
+    if (!best || result.confidence > best.confidence) {
       best = { name: sig.name, confidence: result.confidence, evidence: result.evidence }
     }
   }
-
   return best
 }

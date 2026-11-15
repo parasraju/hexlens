@@ -1,26 +1,32 @@
 import type { DetectedItem } from '../types/index.js'
 import type { PluginContext } from '../types/plugin.js'
+import { hasSection, hasText } from './evidence.js'
 
 interface PackerSignature {
   name: string
-  score: (ctx: PluginContext) => { confidence: number; evidence: string[]; obfuscated: boolean }
+  score: (ctx: PluginContext) => { confidence: number; evidence: string[] }
 }
 
+const MIN_CONFIDENCE = 60
+
+/**
+ * Named packers report only on a signature that does not occur in ordinary
+ * compiler output. Entropy and import counts never identify a packer on their own:
+ * "MPRESS" is a substring of "COMPRESSION", and high-entropy .rodata is normal.
+ */
 const signatures: PackerSignature[] = [
   {
     name: 'UPX',
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /UPX[!\d]/.test(s.value) || s.value === 'UPX!' || s.value.startsWith('UPX '))) {
-        score += 40; evidence.push('UPX signature found')
+      if (hasSection(ctx, n => n === 'UPX0' || n === 'UPX1' || n === 'UPX2')) {
+        score += 80; evidence.push('UPX section names')
       }
-      if (ctx.sections?.some(s => s.name === 'UPX0' || s.name === 'UPX1' || s.name === 'UPX2')) {
-        score += 35; evidence.push('UPX section names')
+      if (hasText(ctx, 'UPX!') || hasText(ctx, '$Id: UPX')) {
+        score += 55; evidence.push('UPX magic')
       }
-      if (ctx.sections?.some(s => s.name === '.packed' || s.name === '.rsrc' && s.entropy > 7)) score += 10
-      if (ctx.format === 'PE' && ctx.sections?.some(s => s.name === 'UPX0')) score += 5
-      return { confidence: Math.min(score, 99), evidence, obfuscated: score > 20 }
+      return { confidence: Math.min(score, 99), evidence }
     },
   },
   {
@@ -28,14 +34,13 @@ const signatures: PackerSignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => s.value.includes('Themida') || s.value.includes('Oreans'))) {
-        score += 35; evidence.push('Themida/Oreans strings')
+      if (hasText(ctx, 'Themida') || hasText(ctx, '.themida')) {
+        score += 70; evidence.push('Themida marker')
       }
-      if (ctx.sections?.some(s => s.name === '.themida' || s.name === '.scylla')) {
-        score += 25; evidence.push('Themida sections')
+      if (hasSection(ctx, n => n === '.themida' || n === '.scylla')) {
+        score += 40; evidence.push('Themida section')
       }
-      if (ctx.sections?.some(s => s.entropy > 7.8)) score += 15
-      return { confidence: Math.min(score, 95), evidence, obfuscated: true }
+      return { confidence: Math.min(score, 95), evidence }
     },
   },
   {
@@ -43,13 +48,13 @@ const signatures: PackerSignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => s.value.includes('VMProtect') || s.value.includes('VMP'))) {
-        score += 35; evidence.push('VMProtect strings')
+      if (hasText(ctx, 'VMProtect')) {
+        score += 70; evidence.push('VMProtect marker')
       }
-      if (ctx.sections?.some(s => s.name === '.vmp0' || s.name === '.vmp1' || s.name === '.vmp')) {
-        score += 30; evidence.push('VMProtect sections')
+      if (hasSection(ctx, n => n === '.vmp0' || n === '.vmp1' || n === '.vmp')) {
+        score += 45; evidence.push('VMProtect section')
       }
-      return { confidence: Math.min(score, 95), evidence, obfuscated: true }
+      return { confidence: Math.min(score, 95), evidence }
     },
   },
   {
@@ -57,14 +62,14 @@ const signatures: PackerSignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => s.value.includes('MPRESS') || s.value.includes('MPRESS1'))) {
-        score += 35; evidence.push('MPRESS signature')
+      // "MPRESS1"/"MPRESS2" are the on-disk markers. Bare "MPRESS" matches COMPRESSION.
+      if (hasText(ctx, 'MPRESS1') || hasText(ctx, 'MPRESS2')) {
+        score += 75; evidence.push('MPRESS marker')
       }
-      if (ctx.sections?.some(s => s.name === '.MPRESS' || s.name === '.mprs')) {
-        score += 25; evidence.push('MPRESS sections')
+      if (hasSection(ctx, n => /^\.mpress/i.test(n) || n === '.mprs')) {
+        score += 40; evidence.push('MPRESS section')
       }
-      if (ctx.sections?.some(s => s.entropy > 7.5)) score += 10
-      return { confidence: Math.min(score, 92), evidence, obfuscated: true }
+      return { confidence: Math.min(score, 94), evidence }
     },
   },
   {
@@ -72,13 +77,13 @@ const signatures: PackerSignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => s.value.includes('ASPack') || s.value.includes('ASPack '))) {
-        score += 35; evidence.push('ASPack signature')
+      if (hasText(ctx, 'ASPack')) {
+        score += 70; evidence.push('ASPack marker')
       }
-      if (ctx.sections?.some(s => s.name === '.aspack' || s.name === '.adata')) {
-        score += 25; evidence.push('ASPack sections')
+      if (hasSection(ctx, n => n.toLowerCase() === '.aspack')) {
+        score += 40; evidence.push('ASPack section')
       }
-      return { confidence: Math.min(score, 90), evidence, obfuscated: true }
+      return { confidence: Math.min(score, 92), evidence }
     },
   },
   {
@@ -86,58 +91,36 @@ const signatures: PackerSignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-
-      const highEntropySections = ctx.sections?.filter(s => s.entropy > 7.5) || []
-      if (highEntropySections.length > 0) {
-        score += 15; evidence.push(`${highEntropySections.length} high-entropy sections (>7.5)`)
+      if (hasSection(ctx, n => /^\.(packed|enigma1|petite|nsp[01]|upack)$/i.test(n))) {
+        score += 70; evidence.push('Packer section name')
       }
-
-      if (ctx.sections?.some(s => s.entropy > 7.8 && s.size > 10000)) {
-        score += 10; evidence.push('Very high entropy in large section')
+      const modules = new Set((ctx.imports ?? []).map(i => i.module).filter(Boolean))
+      const exec = (ctx.sections ?? []).filter(s =>
+        /EXEC|EXECUTE/.test(s.permissions) && !/NOBITS/.test(s.permissions) && s.size > 8192 && s.entropy > 7.2,
+      )
+      // Packed PE stubs typically import only LoadLibrary/GetProcAddress. Static ELF does not.
+      if (ctx.format === 'PE' && modules.size > 0 && modules.size <= 2 && exec.length > 0) {
+        score += 25; evidence.push('PE with a tiny import set and high-entropy code')
       }
-
-      const importCount = ctx.imports?.length || 0
-      if (importCount < 5 && (ctx.format === 'PE' || ctx.format === 'ELF')) {
-        score += 10; evidence.push('Suspiciously few imports')
-      }
-
-      if (ctx.security?.overlay) {
-        score += 5; evidence.push('Executable overlay present')
-      }
-
-      return { confidence: Math.min(score, 60), evidence, obfuscated: score > 20 }
+      return { confidence: Math.min(score, 80), evidence }
     },
   },
 ]
 
 export function detectPacker(ctx: PluginContext): DetectedItem | null {
   let best: DetectedItem | null = null
-
   for (const sig of signatures) {
     const result = sig.score(ctx)
-    if (result.confidence > 15 && (!best || result.confidence > best.confidence)) {
-      const item: DetectedItem = { name: sig.name, confidence: result.confidence, evidence: result.evidence }
-      if (!best || result.confidence > best.confidence) best = item
+    if (result.confidence < MIN_CONFIDENCE || result.evidence.length === 0) continue
+    if (!best || result.confidence > best.confidence) {
+      best = { name: sig.name, confidence: result.confidence, evidence: result.evidence }
     }
   }
-
   return best
 }
 
 export function detectObfuscation(ctx: PluginContext): DetectedItem | null {
-  const best = detectPacker(ctx)
-  if (best && best.confidence > 30) {
-    return { name: `${best.name} (packed/obfuscated)`, confidence: best.confidence, evidence: best.evidence }
-  }
-
-  const highEntropySections = ctx.sections?.filter(s => s.entropy > 7.5) || []
-  if (highEntropySections.length > 1) {
-    return {
-      name: 'Obfuscated',
-      confidence: Math.min(40 + highEntropySections.length * 10, 80),
-      evidence: [`${highEntropySections.length} high-entropy sections`],
-    }
-  }
-
-  return null
+  const packed = detectPacker(ctx)
+  if (!packed) return null
+  return { name: `${packed.name} (packed/obfuscated)`, confidence: packed.confidence, evidence: packed.evidence }
 }

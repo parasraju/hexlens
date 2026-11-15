@@ -1,149 +1,46 @@
 import type { DetectedItem } from '../types/index.js'
 import type { PluginContext } from '../types/plugin.js'
+import { countNames, hasApi, hasModule, hasSection, hasText, symbolSet, textMarker } from './evidence.js'
 
 interface LibrarySignature {
   name: string
   score: (ctx: PluginContext) => { confidence: number; evidence: string[] }
 }
 
+const MIN_CONFIDENCE = 55
+
+function apis(ctx: PluginContext, names: readonly string[], each: number, cap: number): { hits: number; score: number } {
+  const symbols = symbolSet(ctx)
+  let hits = 0
+  for (const name of names) if (hasApi(ctx, symbols, name)) hits++
+  return { hits, score: Math.min(cap, hits * each) }
+}
+
 const signatures: LibrarySignature[] = [
-  {
-    name: 'OpenSSL',
-    score: (ctx) => {
-      const evidence: string[] = []
-      let score = 0
-      if (ctx.strings?.some(s => /OpenSSL/.test(s.value) || /libssl/.test(s.value) || /libcrypto/.test(s.value))) {
-        score += 25; evidence.push('OpenSSL version strings')
-      }
-      if (ctx.strings?.some(s => /SSL_CTX_|SSL_new|SSL_read/.test(s.value))) {
-        score += 20; evidence.push('OpenSSL API symbols')
-      }
-      if (ctx.metadata.peData) {
-        const pe = ctx.metadata.peData as any
-        if (pe?.imports?.some((i: any) => i.module === 'libssl' || i.module === 'libcrypto' || i.module === 'ssleay32' || i.module === 'libeay32')) {
-          score += 20; evidence.push('OpenSSL import libraries')
-        }
-      }
-      return { confidence: Math.min(score, 95), evidence }
-    },
-  },
-  {
-    name: 'SQLite',
-    score: (ctx) => {
-      const evidence: string[] = []
-      let score = 0
-      if (ctx.strings?.some(s => /sqlite3_/.test(s.value) || /SQLite/.test(s.value))) {
-        score += 25; evidence.push('SQLite API/signature')
-      }
-      if (ctx.strings?.some(s => s.value.startsWith('sqlite3_')) && ctx.strings.filter(s => s.value.startsWith('sqlite3_')).length > 3) {
-        score += 20; evidence.push('Multiple SQLite exports')
-      }
-      if (ctx.strings?.some(s => s.value.includes('SQLite format 3'))) {
-        score += 30; evidence.push('SQLite database header')
-      }
-      return { confidence: Math.min(score, 97), evidence }
-    },
-  },
-  {
-    name: 'FFmpeg',
-    score: (ctx) => {
-      const evidence: string[] = []
-      let score = 0
-      if (ctx.strings?.some(s => /av_|avcodec|avformat|avutil/.test(s.value))) {
-        score += 25; evidence.push('FFmpeg API symbols')
-      }
-      if (ctx.strings?.some(s => /FFmpeg/.test(s.value))) {
-        score += 20; evidence.push('FFmpeg strings')
-      }
-      if (ctx.strings?.some(s => /libavcodec\.|libavformat\.|libavutil\./i.test(s.value))) {
-        score += 15; evidence.push('FFmpeg library references')
-      }
-      return { confidence: Math.min(score, 93), evidence }
-    },
-  },
-  {
-    name: 'Qt',
-    score: (ctx) => {
-      const evidence: string[] = []
-      let score = 0
-      if (ctx.strings?.some(s => /^Q[A-Z]/.test(s.value) && s.value.length > 2 && s.value.length < 40)) {
-        score += 15; evidence.push('Qt class names')
-      }
-      if (ctx.strings?.some(s => /Qt::/.test(s.value) || /QObject::/.test(s.value))) {
-        score += 15; evidence.push('Qt namespaced symbols')
-      }
-      if (ctx.strings?.some(s => /libQt\d/.test(s.value))) {
-        score += 20; evidence.push('Qt library references')
-      }
-      return { confidence: Math.min(score, 90), evidence }
-    },
-  },
-  {
-    name: 'GTK',
-    score: (ctx) => {
-      const evidence: string[] = []
-      let score = 0
-      if (ctx.strings?.some(s => /gtk_/.test(s.value) || /gdk_/.test(s.value))) {
-        score += 20; evidence.push('GTK API symbols')
-      }
-      if (ctx.strings?.some(s => /libgtk/.test(s.value))) {
-        score += 15; evidence.push('GTK library')
-      }
-      return { confidence: Math.min(score, 85), evidence }
-    },
-  },
-  {
-    name: 'SDL',
-    score: (ctx) => {
-      const evidence: string[] = []
-      let score = 0
-      if (ctx.strings?.some(s => /SDL_/.test(s.value))) {
-        score += 20; evidence.push('SDL API symbols')
-      }
-      if (ctx.strings?.some(s => /libSDL/.test(s.value))) {
-        score += 15; evidence.push('SDL library')
-      }
-      return { confidence: Math.min(score, 88), evidence }
-    },
-  },
-  {
-    name: 'GLFW',
-    score: (ctx) => {
-      const evidence: string[] = []
-      let score = 0
-      if (ctx.strings?.some(s => /glfw[A-Z]/.test(s.value) || /GLFW[A-Z]/.test(s.value))) {
-        score += 20; evidence.push('GLFW API')
-      }
-      if (ctx.strings?.some(s => /libglfw/.test(s.value))) score += 10
-      return { confidence: Math.min(score, 85), evidence }
-    },
-  },
-  {
-    name: 'OpenCV',
-    score: (ctx) => {
-      const evidence: string[] = []
-      let score = 0
-      if (ctx.strings?.some(s => /cv::|cv_|opencv/.test(s.value))) {
-        score += 20; evidence.push('OpenCV symbols')
-      }
-      if (ctx.strings?.some(s => /libopencv_/.test(s.value))) {
-        score += 15; evidence.push('OpenCV library')
-      }
-      return { confidence: Math.min(score, 88), evidence }
-    },
-  },
   {
     name: 'libcurl',
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /curl_/.test(s.value) || /libcurl/.test(s.value))) {
-        score += 20; evidence.push('libcurl API')
-      }
-      if (ctx.strings?.some(s => s.value.includes('curl_easy_init') || s.value.includes('curl_easy_perform'))) {
-        score += 20; evidence.push('libcurl functions')
-      }
-      return { confidence: Math.min(score, 93), evidence }
+      if (hasModule(ctx, /libcurl/i)) { score += 72; evidence.push('linked libcurl') }
+      const hit = apis(ctx, ['curl_easy_init', 'curl_easy_setopt', 'curl_easy_perform', 'curl_easy_cleanup', 'curl_global_init', 'curl_version'], 14, 28)
+      if (hit.hits > 0) { score += hit.score; evidence.push(`${hit.hits} libcurl APIs`) }
+      const version = textMarker(ctx, 'libcurl/')
+      if (version) { score += 12; evidence.push(version) }
+      return { confidence: Math.min(score, 96), evidence }
+    },
+  },
+  {
+    name: 'OpenSSL',
+    score: (ctx) => {
+      const evidence: string[] = []
+      let score = 0
+      if (hasModule(ctx, /libssl|libcrypto|ssleay32|libeay32/i)) { score += 70; evidence.push('linked OpenSSL') }
+      const version = textMarker(ctx, 'OpenSSL ')
+      if (version && /OpenSSL \d/.test(version)) { score += 30; evidence.push(version) }
+      const hit = apis(ctx, ['SSL_CTX_new', 'SSL_new', 'OPENSSL_init_ssl', 'EVP_EncryptInit_ex'], 12, 24)
+      if (hit.hits > 0) { score += hit.score; evidence.push(`${hit.hits} OpenSSL APIs`) }
+      return { confidence: Math.min(score, 95), evidence }
     },
   },
   {
@@ -151,11 +48,97 @@ const signatures: LibrarySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /deflate|inflate|zlib|z_stream/.test(s.value))) {
-        score += 20; evidence.push('zlib symbols')
+      if (hasModule(ctx, /(^|\/)libz(\.|$)|zlib1\.dll/i)) { score += 72; evidence.push('linked zlib') }
+      const hit = apis(ctx, ['deflateInit_', 'inflateInit_', 'zlibVersion', 'compress2'], 16, 32)
+      if (hit.hits > 0) { score += hit.score; evidence.push(`${hit.hits} zlib APIs`) }
+      const version = textMarker(ctx, 'deflate 1.') ?? textMarker(ctx, 'inflate 1.')
+      if (version) { score += 20; evidence.push(version) }
+      return { confidence: Math.min(score, 94), evidence }
+    },
+  },
+  {
+    name: 'SQLite',
+    score: (ctx) => {
+      const evidence: string[] = []
+      let score = 0
+      if (hasModule(ctx, /libsqlite/i)) { score += 70; evidence.push('linked SQLite') }
+      const symbols = symbolSet(ctx)
+      const hits = countNames(symbols, ['sqlite3_open', 'sqlite3_exec', 'sqlite3_prepare_v2', 'sqlite3_libversion'])
+        + (hasText(ctx, 'sqlite3_open') ? 1 : 0)
+      if (hits > 0) { score += Math.min(40, hits * 15); evidence.push('SQLite API') }
+      if (hasText(ctx, 'SQLite version ') || hasText(ctx, 'SQLite format 3')) {
+        score += 25; evidence.push('SQLite version string')
       }
-      if (ctx.strings?.some(s => s.value === 'zlib' || s.value.includes('zlibVersion'))) {
-        score += 15; evidence.push('zlib version string')
+      return { confidence: Math.min(score, 96), evidence }
+    },
+  },
+  {
+    name: 'FFmpeg',
+    score: (ctx) => {
+      const evidence: string[] = []
+      let score = 0
+      if (hasModule(ctx, /libavcodec|libavformat|libavutil|avcodec|avformat/i)) {
+        score += 70; evidence.push('linked FFmpeg')
+      }
+      if (textMarker(ctx, 'FFmpeg version') || textMarker(ctx, 'Lavf') || textMarker(ctx, 'Lavc')) {
+        score += 25; evidence.push('FFmpeg version string')
+      }
+      return { confidence: Math.min(score, 92), evidence }
+    },
+  },
+  {
+    name: 'Qt',
+    score: (ctx) => {
+      const evidence: string[] = []
+      let score = 0
+      if (hasModule(ctx, /libQt\d|Qt\dCore|Qt5Core|Qt6Core/i)) { score += 75; evidence.push('linked Qt') }
+      if (hasText(ctx, 'QObject::') || hasText(ctx, 'qt_version_tag')) {
+        score += 20; evidence.push('Qt runtime')
+      }
+      return { confidence: Math.min(score, 92), evidence }
+    },
+  },
+  {
+    name: 'GTK',
+    score: (ctx) => {
+      const evidence: string[] = []
+      let score = 0
+      if (hasModule(ctx, /libgtk|libgdk/i)) { score += 72; evidence.push('linked GTK') }
+      const hit = apis(ctx, ['gtk_init', 'gtk_main', 'g_object_unref'], 12, 24)
+      if (hit.hits > 0) { score += hit.score; evidence.push('GTK API') }
+      return { confidence: Math.min(score, 90), evidence }
+    },
+  },
+  {
+    name: 'SDL',
+    score: (ctx) => {
+      const evidence: string[] = []
+      let score = 0
+      if (hasModule(ctx, /libSDL/i)) { score += 72; evidence.push('linked SDL') }
+      const hit = apis(ctx, ['SDL_Init', 'SDL_CreateWindow', 'SDL_PollEvent'], 14, 28)
+      if (hit.hits > 0) { score += hit.score; evidence.push('SDL API') }
+      return { confidence: Math.min(score, 90), evidence }
+    },
+  },
+  {
+    name: 'GLFW',
+    score: (ctx) => {
+      const evidence: string[] = []
+      let score = 0
+      if (hasModule(ctx, /libglfw/i)) { score += 70; evidence.push('linked GLFW') }
+      const hit = apis(ctx, ['glfwInit', 'glfwCreateWindow', 'glfwPollEvents'], 14, 28)
+      if (hit.hits > 0) { score += hit.score; evidence.push('GLFW API') }
+      return { confidence: Math.min(score, 88), evidence }
+    },
+  },
+  {
+    name: 'OpenCV',
+    score: (ctx) => {
+      const evidence: string[] = []
+      let score = 0
+      if (hasModule(ctx, /libopencv_/i)) { score += 75; evidence.push('linked OpenCV') }
+      if (hasText(ctx, 'opencv_world') || hasText(ctx, 'cv::Mat')) {
+        score += 20; evidence.push('OpenCV types')
       }
       return { confidence: Math.min(score, 90), evidence }
     },
@@ -165,12 +148,11 @@ const signatures: LibrarySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /electron/i.test(s.value) || /ELECTRON/.test(s.value))) {
-        score += 20; evidence.push('Electron strings')
+      if (hasText(ctx, 'Electron/') || hasText(ctx, 'ELECTRON_RUN_AS_NODE')) {
+        score += 70; evidence.push('Electron runtime')
       }
-      if (ctx.strings?.some(s => /node::|v8::/.test(s.value))) score += 10
-      if (ctx.sections.some(s => s.name.includes('electron'))) { score += 15; evidence.push('Electron sections') }
-      return { confidence: Math.min(score, 85), evidence }
+      if (hasSection(ctx, n => n.toLowerCase().includes('electron'))) score += 15
+      return { confidence: Math.min(score, 88), evidence }
     },
   },
   {
@@ -178,12 +160,12 @@ const signatures: LibrarySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /node\.js/i.test(s.value) || /Node\.js/i.test(s.value))) {
-        score += 20; evidence.push('Node.js strings')
+      if (hasModule(ctx, /libnode/i) || hasText(ctx, 'node::Start') || hasText(ctx, 'NODE_MODULE_VERSION')) {
+        score += 70; evidence.push('Node.js runtime')
       }
-      if (ctx.strings?.some(s => /node_api_|napi_/.test(s.value))) score += 15
-      if (ctx.strings?.some(s => /libnode/.test(s.value))) { score += 15; evidence.push('Node.js library') }
-      return { confidence: Math.min(score, 82), evidence }
+      const hit = apis(ctx, ['napi_module_register', 'node_api_module_get_api_version'], 15, 20)
+      if (hit.hits > 0) score += hit.score
+      return { confidence: Math.min(score, 88), evidence }
     },
   },
   {
@@ -191,16 +173,12 @@ const signatures: LibrarySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /Py_|PyObject|PyBytes|PyTuple|PyDict/.test(s.value))) {
-        score += 20; evidence.push('Python C API')
-      }
-      if (ctx.strings?.some(s => /Python\/[\d.]+/.test(s.value))) {
-        score += 20; evidence.push('Python version string')
-      }
-      if (ctx.strings?.some(s => /libpython/.test(s.value))) {
-        score += 15; evidence.push('Python library')
-      }
-      return { confidence: Math.min(score, 93), evidence }
+      if (hasModule(ctx, /libpython/i)) { score += 72; evidence.push('linked libpython') }
+      const version = textMarker(ctx, 'Python/')
+      if (version && /Python\/\d/.test(version)) { score += 25; evidence.push(version) }
+      const hit = apis(ctx, ['Py_Initialize', 'Py_InitializeEx', 'PyObject_Call', 'PyRun_SimpleString'], 14, 28)
+      if (hit.hits > 0) { score += hit.score; evidence.push('Python C API') }
+      return { confidence: Math.min(score, 94), evidence }
     },
   },
   {
@@ -208,13 +186,9 @@ const signatures: LibrarySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /lua_|[Ll]ua\s+\d/.test(s.value))) {
-        score += 20; evidence.push('Lua API')
-      }
-      if (ctx.strings?.some(s => /luaL_|luaopen_/.test(s.value))) {
-        score += 15; evidence.push('Lua auxiliary library')
-      }
-      if (ctx.strings?.some(s => /liblua/.test(s.value))) score += 10
+      if (hasModule(ctx, /liblua/i)) { score += 70; evidence.push('linked Lua') }
+      const hit = apis(ctx, ['luaL_newstate', 'luaL_openlibs', 'lua_pcall'], 16, 32)
+      if (hit.hits > 0) { score += hit.score; evidence.push('Lua API') }
       return { confidence: Math.min(score, 90), evidence }
     },
   },
@@ -223,10 +197,11 @@ const signatures: LibrarySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /jvm|JVM|JNI_/.test(s.value))) score += 15
-      if (ctx.strings?.some(s => /Java_/.test(s.value))) { score += 20; evidence.push('JNI function names') }
-      if (ctx.strings?.some(s => /jclass|jobject|jmethodID/.test(s.value))) score += 10
-      return { confidence: Math.min(score, 78), evidence }
+      if (hasModule(ctx, /libjvm|libjli/i)) { score += 70; evidence.push('linked JVM') }
+      if (hasText(ctx, 'JNI_CreateJavaVM') || hasText(ctx, 'JNI_OnLoad')) {
+        score += 25; evidence.push('JNI entry points')
+      }
+      return { confidence: Math.min(score, 90), evidence }
     },
   },
   {
@@ -234,34 +209,24 @@ const signatures: LibrarySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /mscorlib|System\./.test(s.value))) {
-        score += 20; evidence.push('.NET framework references')
+      if (ctx.format === '.NET') { score += 80; evidence.push('CLI header') }
+      if (hasModule(ctx, /mscoree/i) || hasText(ctx, 'mscoree.dll')) {
+        score += 30; evidence.push('CLR bootstrap')
       }
-      if (ctx.strings?.some(s => /CLR|\.NET/.test(s.value))) score += 15
-      if (ctx.strings?.some(s => /managed|garbage collection/i.test(s.value))) score += 10
-      if (ctx.metadata.peData) {
-        const pe = ctx.metadata.peData as any
-        if (pe?.imports?.some((i: any) => i.module === 'mscoree' || i.name === 'CorExeMain' || i.name === 'CorDllMain')) {
-          score += 25; evidence.push('.NET CLR imports')
-        }
-      }
-      return { confidence: Math.min(score, 92), evidence }
+      const asm = ctx.metadata.assembly as { runtime?: string } | undefined
+      if (asm?.runtime) { score += 15; evidence.push(asm.runtime) }
+      return { confidence: Math.min(score, 94), evidence }
     },
   },
 ]
 
 export function detectLibraries(ctx: PluginContext): DetectedItem[] {
   const results: DetectedItem[] = []
-  const seen = new Set<string>()
-
   for (const sig of signatures) {
     const result = sig.score(ctx)
-    if (result.confidence > 20 && !seen.has(sig.name)) {
-      seen.add(sig.name)
-      results.push({ name: sig.name, confidence: result.confidence, evidence: result.evidence })
-    }
+    if (result.confidence < MIN_CONFIDENCE || result.evidence.length === 0) continue
+    results.push({ name: sig.name, confidence: result.confidence, evidence: result.evidence })
   }
-
   results.sort((a, b) => b.confidence - a.confidence)
   return results
 }

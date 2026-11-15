@@ -21,6 +21,14 @@ export interface DotNetData {
 const MAX_ITEMS = 50000
 
 export function parseDotNet(data: Uint8Array, sections: SectionInfo[]): DotNetData | null {
+  try {
+    return parseDotNetInner(data, sections)
+  } catch {
+    return null
+  }
+}
+
+function parseDotNetInner(data: Uint8Array, sections: SectionInfo[]): DotNetData | null {
   if (data.length < 0x40) return null
   if (data[0] !== 0x4D || data[1] !== 0x5A) return null
 
@@ -58,6 +66,7 @@ export function parseDotNet(data: Uint8Array, sections: SectionInfo[]): DotNetDa
   reader.readU16(true)
   reader.readU32(true)
   const versionLength = reader.readU32(true)
+  if (versionLength > 1024) return null
   const versionEnd = metaOff + 16 + versionLength
   if (versionEnd > data.length) return null
 

@@ -1,18 +1,30 @@
 import type { BinaryFormat, Architecture, OperatingSystem, Endianness } from '../types/index.js'
 
+function u16(data: Uint8Array, offset: number, littleEndian: boolean): number | null {
+  if (offset < 0 || offset + 2 > data.length) return null
+  return new DataView(data.buffer, data.byteOffset + offset, 2).getUint16(0, littleEndian)
+}
+
+function u32(data: Uint8Array, offset: number, littleEndian: boolean): number | null {
+  if (offset < 0 || offset + 4 > data.length) return null
+  return new DataView(data.buffer, data.byteOffset + offset, 4).getUint32(0, littleEndian)
+}
+
 export function detectFormat(data: Uint8Array): { format: BinaryFormat; endianness: Endianness } {
   if (data.length < 4) return { format: 'Unknown', endianness: 'little' }
 
   if (data[0] === 0x4D && data[1] === 0x5A) {
-    const peOffset = new DataView(data.buffer, data.byteOffset + 0x3C, 4).getUint32(0, true)
-    if (peOffset + 4 <= data.length) {
-      const peSig = data[peOffset] === 0x50 && data[peOffset + 1] === 0x45
+    const peOffset = u32(data, 0x3C, true)
+    if (peOffset !== null && peOffset >= 0 && peOffset + 4 <= data.length) {
+      const peSig = data[peOffset] === 0x50 && data[peOffset + 1] === 0x45 && data[peOffset + 2] === 0 && data[peOffset + 3] === 0
       if (peSig) {
         if (hasComDescriptor(data, peOffset)) return { format: '.NET', endianness: 'little' }
         return { format: 'PE', endianness: 'little' }
       }
     }
-    return { format: 'PE', endianness: 'little' }
+    // A real DOS stub is at least an IMAGE_DOS_HEADER. Shorter MZ blobs are not binaries.
+    if (data.length >= 0x40) return { format: 'PE', endianness: 'little' }
+    return { format: 'Unknown', endianness: 'little' }
   }
 
   if (
@@ -49,9 +61,10 @@ export function detectFormat(data: Uint8Array): { format: BinaryFormat; endianne
 
 export function detectArchitecture(data: Uint8Array, format: BinaryFormat): Architecture {
   if (format === 'PE' || format === '.NET') {
-    if (data.length < 0x3C + 4 + 4 + 2) return 'Unknown'
-    const peOffset = new DataView(data.buffer, data.byteOffset + 0x3C, 4).getUint32(0, true)
-    const machine = new DataView(data.buffer, data.byteOffset + peOffset + 4, 2).getUint16(0, true)
+    const peOffset = u32(data, 0x3C, true)
+    if (peOffset === null) return 'Unknown'
+    const machine = u16(data, peOffset + 4, true)
+    if (machine === null) return 'Unknown'
     switch (machine) {
       case 0x014C: return 'x86'
       case 0x8664: return 'x64'
@@ -65,8 +78,9 @@ export function detectArchitecture(data: Uint8Array, format: BinaryFormat): Arch
   }
 
   if (format === 'ELF') {
-    const eiClass = data[4]
-    const eMachine = new DataView(data.buffer, data.byteOffset + 18, 2).getUint16(0, data[5] === 1)
+    if (data.length < 20) return 'Unknown'
+    const eMachine = u16(data, 18, data[5] === 1)
+    if (eMachine === null) return 'Unknown'
     switch (eMachine) {
       case 3: return 'x86'
       case 0x3E: return 'x64'
@@ -81,7 +95,13 @@ export function detectArchitecture(data: Uint8Array, format: BinaryFormat): Arch
   }
 
   if (format === 'Mach-O') {
-    const cputype = new DataView(data.buffer, data.byteOffset + 4, 4).getInt32(0, true)
+    const magic = u32(data, 0, true)
+    let cputype: number | null
+    if (magic === 0xBEBAFECA) cputype = u32(data, 8, false)
+    else if (magic === 0xCAFEBABE) cputype = u32(data, 8, true)
+    else if (magic === 0xCEFAEDFE || magic === 0xCFFAEDFE) cputype = u32(data, 4, false)
+    else cputype = u32(data, 4, true)
+    if (cputype === null) return 'Unknown'
     switch (cputype) {
       case 7: return 'x86'
       case 0x01000007: return 'x64'
@@ -107,10 +127,9 @@ export function detectOS(format: BinaryFormat): OperatingSystem {
 }
 
 function hasComDescriptor(data: Uint8Array, peOffset: number): boolean {
-  if (peOffset + 24 + 4 > data.length) return false
-  const magic = new DataView(data.buffer, data.byteOffset + peOffset + 24, 2).getUint16(0, true)
+  const magic = u16(data, peOffset + 24, true)
+  if (magic === null) return false
   const dataDirStart = peOffset + 24 + (magic === 0x20B ? 112 : 96)
-  if (dataDirStart + 14 * 8 + 8 > data.length) return false
-  const comRva = new DataView(data.buffer, data.byteOffset + dataDirStart + 14 * 8, 4).getUint32(0, true)
-  return comRva !== 0
+  const comRva = u32(data, dataDirStart + 14 * 8, true)
+  return comRva !== null && comRva !== 0
 }

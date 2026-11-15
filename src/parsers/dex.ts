@@ -23,6 +23,14 @@ export interface DEXData {
 const MAX_ITEMS = 50000
 
 export function parseDEX(data: Uint8Array): DEXData | null {
+  try {
+    return parseDEXInner(data)
+  } catch {
+    return null
+  }
+}
+
+function parseDEXInner(data: Uint8Array): DEXData | null {
   if (data.length < 0x70) return null
   if (data[0] !== 0x64 || data[1] !== 0x65 || data[2] !== 0x78 || data[3] !== 0x0A) return null
 
