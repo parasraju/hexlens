@@ -8,13 +8,14 @@ import { formatScan } from './reporters/scan.js'
 import { YaraScanner } from './yara/index.js'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { VERSION } from './version.js'
 
 const program = new Command()
 
 program
   .name('hexlens')
   .description('Binary Intelligence & Reverse Engineering Framework')
-  .version('0.5.0')
+  .version(VERSION)
 
 program
   .command('analyze')

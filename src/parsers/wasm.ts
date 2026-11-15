@@ -15,10 +15,19 @@ export interface WASMData {
 }
 
 export function parseWASM(data: Uint8Array): WASMData | null {
+  try {
+    return parseWASMInner(data)
+  } catch {
+    return null
+  }
+}
+
+function parseWASMInner(data: Uint8Array): WASMData | null {
   if (data.length < 8) return null
 
   if (data[0] !== 0x00 || data[1] !== 0x61 || data[2] !== 0x73 || data[3] !== 0x6D) return null
 
+  if (data.byteOffset + 8 > data.buffer.byteLength) return null
   const version = new DataView(data.buffer, data.byteOffset + 4, 4).getUint32(0, true)
   if (version !== 1) return null
 
@@ -41,10 +50,13 @@ export function parseWASM(data: Uint8Array): WASMData | null {
     12: 'data_count',
   }
 
-  while (reader.remaining > 0) {
+  let guard = 0
+  while (reader.remaining > 0 && guard++ < 10000) {
+    const here = reader.offset
     const sectionId = reader.readU8()
     const sectionSize = readLEB128(reader)
     const sectionStart = reader.offset
+    if (sectionSize < 0 || sectionStart < here || sectionStart > data.length) break
     const sectionName = sectionNames[sectionId] || `section_${sectionId}`
 
     sections.push({
@@ -106,7 +118,9 @@ export function parseWASM(data: Uint8Array): WASMData | null {
       }
     }
 
-    reader.seek(sectionStart + sectionSize)
+    const next = sectionStart + sectionSize
+    if (!Number.isFinite(next) || next <= here || next > data.length) break
+    reader.seek(next)
   }
 
   return {
@@ -125,13 +139,12 @@ export function parseWASM(data: Uint8Array): WASMData | null {
 function readLEB128(reader: BufferReader): number {
   let result = 0
   let shift = 0
-  let count = 0
-  while (count < 10) {
+  for (let count = 0; count < 5; count++) {
+    if (reader.remaining <= 0) return result
     const byte = reader.readU8()
     result |= (byte & 0x7F) << shift
     if ((byte & 0x80) === 0) break
     shift += 7
-    count++
   }
-  return result
+  return result >>> 0
 }

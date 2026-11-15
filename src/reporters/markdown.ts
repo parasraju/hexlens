@@ -1,4 +1,5 @@
 import type { BinaryReport } from '../types/index.js'
+import { securityChecks } from '../detectors/security.js'
 
 export function toMarkdown(report: BinaryReport): string {
   const lines: string[] = []
@@ -7,6 +8,14 @@ export function toMarkdown(report: BinaryReport): string {
   lines.push('')
   lines.push(`**Format:** ${report.format} | **Architecture:** ${report.architecture} | **OS:** ${report.operatingSystem}`)
   lines.push('')
+  if (report.format === 'Unknown') {
+    lines.push('> **Not a recognized binary.** This file does not match PE, ELF, Mach-O, WASM, DEX, or .NET.')
+    lines.push('')
+  }
+  if (report.metadata.truncated === true) {
+    lines.push('> **Truncated or malformed header.** Not enough of the file is present to parse.')
+    lines.push('')
+  }
   lines.push('## File Information')
   lines.push(`- **Size:** ${report.file.size.toLocaleString()} bytes`)
   lines.push(`- **SHA256:** \`${report.file.sha256}\``)
@@ -109,21 +118,16 @@ export function toMarkdown(report: BinaryReport): string {
   }
 
   if (report.security) {
-    lines.push('## Security')
-    lines.push('| Feature | Status |')
-    lines.push('|---------|--------|')
-    const sec = report.security
-    const checks = [
-      ['ASLR', sec.aslr], ['DEP', sec.dep], ['CFG', sec.cfg],
-      ['NX', sec.nx], ['PIE', sec.pie], ['RELRO', sec.relro],
-      ['Stack Canaries', sec.stackCanaries], ['SafeSEH', sec.safeSEH],
-      ['Signed', sec.signed], ['Timestamp Anomaly', sec.timestampAnomaly],
-      ['Overlay', sec.overlay],
-    ]
-    for (const [name, enabled] of checks) {
-      lines.push(`| ${name} | ${enabled ? '✅' : '❌'} |`)
+    const checks = securityChecks(report.format, report.security)
+    if (checks.length > 0) {
+      lines.push('## Security')
+      lines.push('| Feature | Status |')
+      lines.push('|---------|--------|')
+      for (const check of checks) {
+        lines.push(`| ${check.name} | ${check.enabled ? '✅' : '❌'} |`)
+      }
+      lines.push('')
     }
-    lines.push('')
   }
 
   if (report.strings.length > 0) {

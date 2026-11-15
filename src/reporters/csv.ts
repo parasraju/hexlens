@@ -11,6 +11,9 @@ export function toCSV(report: BinaryReport): string {
   rows.push(['file', 'md5', report.file.md5])
   rows.push(['file', 'sha1', report.file.sha1])
   rows.push(['format', '', report.format])
+  if (report.format === 'Unknown') {
+    rows.push(['note', '', 'Not a recognized binary'])
+  }
   rows.push(['architecture', '', report.architecture])
   rows.push(['os', '', report.operatingSystem])
   rows.push(['endianness', '', report.endianness])

@@ -1,5 +1,6 @@
 import type { CapabilityInfo } from '../types/index.js'
 import type { PluginContext } from '../types/plugin.js'
+import { symbolSet } from './evidence.js'
 
 interface CapabilitySignature {
   name: string
@@ -14,17 +15,11 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /socket|connect|bind|listen|accept/i.test(s.value))) {
-        score += 10; evidence.push('Socket operations')
-      }
-      if (ctx.strings?.some(s => /WSAStartup|WSACleanup|WSASocket/i.test(s.value))) {
-        score += 10; evidence.push('Winsock API')
-      }
-      if (ctx.strings?.some(s => /getaddrinfo|gethostbyname/i.test(s.value))) score += 5
-      if (ctx.imports?.some(i => /socket|send|recv|WSASend|WSARecv/.test(i.name))) {
-        score += 15; evidence.push('Networking imports')
-      }
-      return { confidence: Math.min(score, 95), evidence }
+      const symbols = symbolSet(ctx)
+      const sock = ['socket', 'connect', 'bind', 'listen', 'accept', 'WSAStartup', 'WSASocket'].filter(n => symbols.has(n))
+      if (sock.length >= 2) { score += 60; evidence.push(sock.slice(0, 4).join(', ')) }
+      else if (sock.length === 1) { score += 35; evidence.push(sock[0]) }
+      return { confidence: Math.min(score, 90), evidence }
     },
   },
   {
@@ -33,11 +28,11 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /gethostbyname|getaddrinfo|DnsQuery|res_query/i.test(s.value))) {
-        score += 15; evidence.push('DNS resolution APIs')
-      }
-      if (ctx.domains && ctx.domains.length > 0) {
-        score += 10; evidence.push(`${ctx.domains.length} domain strings found`)
+      const symbols = symbolSet(ctx)
+      const dns = ['getaddrinfo', 'gethostbyname', 'DnsQuery_A', 'res_query'].filter(n => symbols.has(n))
+      if (dns.length > 0) { score += 55; evidence.push(dns.join(', ')) }
+      if ((ctx.domains?.length ?? 0) >= 3) {
+        score += 15; evidence.push(`${ctx.domains!.length} domain strings`)
       }
       return { confidence: Math.min(score, 85), evidence }
     },
@@ -48,13 +43,15 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.urls && ctx.urls.length > 0) {
-        score += 15; evidence.push(`${ctx.urls.length} URLs found`)
+      if (ctx.libraries?.some(l => l.name === 'libcurl')) {
+        score += 75; evidence.push('libcurl')
       }
-      if (ctx.strings?.some(s => /HTTP\/|https?:\/\//i.test(s.value))) score += 10
-      if (ctx.strings?.some(s => /User-Agent|Content-Type|Accept:/i.test(s.value))) {
-        score += 10; evidence.push('HTTP header strings')
-      }
+      const client = ctx.strings?.some(s =>
+        s.value.includes('HTTP/1.')
+        || /^(?:GET|POST|PUT|DELETE|HEAD) \//.test(s.value)
+        || s.value.includes('User-Agent:'),
+      )
+      if (client) { score += 20; evidence.push('HTTP client strings') }
       return { confidence: Math.min(score, 90), evidence }
     },
   },
@@ -82,12 +79,9 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /CreateFile|ReadFile|WriteFile|fopen|fread|fwrite|open|read|write/i.test(s.value))) {
-        score += 10; evidence.push('File I/O APIs')
-      }
-      if (ctx.strings?.some(s => /\.(exe|dll|txt|dat|log|cfg|ini|xml|json|db)$/i.test(s.value))) {
-        score += 5; evidence.push('File path/extension references')
-      }
+      const symbols = symbolSet(ctx)
+      const io = ['CreateFileA', 'CreateFileW', 'CreateFile', 'NtCreateFile'].filter(n => symbols.has(n))
+      if (io.length > 0) { score += 55; evidence.push(io[0]) }
       return { confidence: Math.min(score, 80), evidence }
     },
   },
@@ -137,8 +131,9 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /waveIn|mic|microphone|audio capture/i.test(s.value))) {
-        score += 15; evidence.push('Audio input references')
+      const symbols = symbolSet(ctx)
+      if (symbols.has('waveInOpen') || symbols.has('waveInStart')) {
+        score += 60; evidence.push('Audio capture API')
       }
       return { confidence: Math.min(score, 55), evidence }
     },
@@ -161,12 +156,12 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /AES|RSA|DES|SHA|MD5|HMAC|encrypt|decrypt|cipher|crypto/i.test(s.value))) {
-        score += 15; evidence.push('Encryption algorithm references')
-      }
       if (ctx.libraries?.some(l => l.name === 'OpenSSL')) {
-        score += 15; evidence.push('OpenSSL (crypto library)')
+        score += 60; evidence.push('OpenSSL')
       }
+      const symbols = symbolSet(ctx)
+      const crypto = ['BCryptEncrypt', 'CryptEncrypt', 'CCCrypt'].filter(n => symbols.has(n))
+      if (crypto.length > 0) { score += 55; evidence.push(crypto[0]) }
       return { confidence: Math.min(score, 85), evidence }
     },
   },
@@ -176,11 +171,12 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /Chrome|Firefox|Edge|Safari|Opera|browser/i.test(s.value))) {
-        score += 10; evidence.push('Browser references')
+      if (ctx.strings?.some(s => /Mozilla\/\d|Chrome\/\d/.test(s.value))) {
+        score += 40; evidence.push('Browser user-agent')
       }
-      if (ctx.strings?.some(s => /NP_|NPP_|NPAPI|ActiveX|Browser/i.test(s.value))) {
-        score += 10; evidence.push('Browser plugin/extension APIs')
+      const symbols = symbolSet(ctx)
+      if (symbols.has('NP_Initialize') || symbols.has('NPN_GetURL')) {
+        score += 30; evidence.push('NPAPI')
       }
       return { confidence: Math.min(score, 60), evidence }
     },
@@ -191,12 +187,9 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /CreateProcess|CreateRemoteThread|NtCreateProcess|fork|execve/i.test(s.value))) {
-        score += 15; evidence.push('Process creation APIs')
-      }
-      if (ctx.strings?.some(s => /ShellExecute|WinExec|system\(/i.test(s.value))) {
-        score += 10; evidence.push('Command execution')
-      }
+      const symbols = symbolSet(ctx)
+      const spawn = ['CreateProcessA', 'CreateProcessW', 'CreateProcess', 'ShellExecuteA', 'ShellExecuteW', 'execve', 'posix_spawn'].filter(n => symbols.has(n))
+      if (spawn.length > 0) { score += 60; evidence.push(spawn[0]) }
       return { confidence: Math.min(score, 85), evidence }
     },
   },
@@ -218,8 +211,8 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /CreateService|OpenSCManager|StartService|InstallService/i.test(s.value))) {
-        score += 20; evidence.push('Service installation APIs')
+      if (ctx.strings?.some(s => /CreateService|OpenSCManager|StartServiceCtrlDispatcher/i.test(s.value))) {
+        score += 60; evidence.push('Service installation APIs')
       }
       return { confidence: Math.min(score, 85), evidence }
     },
@@ -230,8 +223,8 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /ZwLoadDriver|NtLoadDriver|CreateService.*driver/i.test(s.value))) {
-        score += 20; evidence.push('Driver loading APIs')
+      if (ctx.strings?.some(s => /ZwLoadDriver|NtLoadDriver/i.test(s.value))) {
+        score += 65; evidence.push('Driver loading APIs')
       }
       if (ctx.metadata.peData) {
         const pe = ctx.metadata.peData as any
@@ -246,8 +239,8 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /BitBlt|CreateCompatibleDC|GetDC|ScreenCapture|printscreen|screenshot/i.test(s.value))) {
-        score += 20; evidence.push('Screen capture APIs')
+      if (ctx.strings?.some(s => /BitBlt|CreateCompatibleBitmap|ScreenCapture/i.test(s.value))) {
+        score += 55; evidence.push('Screen capture APIs')
       }
       return { confidence: Math.min(score, 80), evidence }
     },
@@ -258,11 +251,12 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /Run|RunOnce|Startup|CurrentVersion\\Run|SCHTASKS|TaskScheduler/i.test(s.value))) {
-        score += 15; evidence.push('Persistence mechanism references')
+      if (ctx.strings?.some(s => /CurrentVersion\\Run|\\RunOnce|Software\\Microsoft\\Windows\\CurrentVersion\\Run/.test(s.value))) {
+        score += 65; evidence.push('Run-key persistence')
       }
-      if (ctx.strings?.some(s => /HKCU\\|HKLM\\|HKEY_/i.test(s.value))) {
-        score += 5; evidence.push('Registry hive references')
+      const symbols = symbolSet(ctx)
+      if (symbols.has('RegSetValueExA') || symbols.has('RegSetValueExW')) {
+        score += 15; evidence.push('Registry write')
       }
       return { confidence: Math.min(score, 75), evidence }
     },
@@ -273,8 +267,8 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /VirtualAllocEx|WriteProcessMemory|CreateRemoteThread|NtCreateThreadEx|QueueUserAPC/i.test(s.value))) {
-        score += 25; evidence.push('Code injection APIs')
+      if (ctx.strings?.some(s => /VirtualAllocEx|WriteProcessMemory|CreateRemoteThread|NtCreateThreadEx|QueueUserAPC/.test(s.value))) {
+        score += 70; evidence.push('Code injection APIs')
       }
       if (ctx.strings?.some(s => /SetWindowsHook|SetWinEventHook|AppInit_DLLs/i.test(s.value))) {
         score += 10; evidence.push('DLL injection references')
@@ -288,8 +282,8 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /SetWindowsHookEx.*WH_KEYBOARD|GetAsyncKeyState|GetKeyState/i.test(s.value))) {
-        score += 25; evidence.push('Keylogging APIs')
+      if (ctx.strings?.some(s => /GetAsyncKeyState|SetWindowsHookEx/.test(s.value))) {
+        score += 70; evidence.push('Keylogging APIs')
       }
       return { confidence: Math.min(score, 82), evidence }
     },
@@ -300,8 +294,8 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /IsDebuggerPresent|NtQueryInformationProcess|CheckRemoteDebuggerPresent|ptrace/i.test(s.value))) {
-        score += 20; evidence.push('Anti-debugging checks')
+      if (ctx.strings?.some(s => /IsDebuggerPresent|CheckRemoteDebuggerPresent|NtQueryInformationProcess/.test(s.value))) {
+        score += 60; evidence.push('Anti-debugging checks')
       }
       if (ctx.strings?.some(s => /OutputDebugString|PEB|BeingDebugged/i.test(s.value))) {
         score += 10; evidence.push('Debugger detection references')
@@ -315,11 +309,8 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.strings?.some(s => /VMWare|VirtualBox|QEMU|vbox|vmtoolsd|VBoxGuest/i.test(s.value))) {
-        score += 15; evidence.push('VM detection references')
-      }
-      if (ctx.strings?.some(s => /cpuid|hypervisor|rdtsc/i.test(s.value))) {
-        score += 10; evidence.push('VM detection instructions')
+      if (ctx.strings?.some(s => /\b(VMware|VirtualBox|VBoxGuest|vmtoolsd|QEMU)\b/.test(s.value))) {
+        score += 55; evidence.push('VM product marker')
       }
       return { confidence: Math.min(score, 65), evidence }
     },
@@ -330,20 +321,22 @@ const signatures: CapabilitySignature[] = [
     score: (ctx) => {
       const evidence: string[] = []
       let score = 0
-      if (ctx.sections?.some(s => s.permissions.includes('WRITE') && s.permissions.includes('EXEC'))) {
-        score += 20; evidence.push('Writable + executable sections')
+      if (ctx.sections?.some(s => /WRITE/.test(s.permissions) && /EXEC/.test(s.permissions) && s.size > 0)) {
+        score += 60; evidence.push('Writable and executable section')
       }
       return { confidence: Math.min(score, 50), evidence }
     },
   },
 ]
 
+const CAPABILITY_MIN = 45
+
 export function detectCapabilities(ctx: PluginContext): CapabilityInfo[] {
   const results: CapabilityInfo[] = []
 
   for (const sig of signatures) {
     const result = sig.score(ctx)
-    if (result.confidence > 20) {
+    if (result.confidence >= CAPABILITY_MIN && result.evidence.length > 0) {
       results.push({ name: sig.name, category: sig.category, confidence: result.confidence, evidence: result.evidence })
     }
   }

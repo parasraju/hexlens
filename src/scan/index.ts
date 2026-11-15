@@ -254,6 +254,10 @@ function buildFlags(report: BinaryReport): ScanFlag[] {
     flags.push({ code: 'UNKNOWN', label: 'Unrecognized file format', severity: 'low' })
   }
 
+  if (report.metadata.truncated === true) {
+    flags.push({ code: 'TRUNCATED', label: 'File header is truncated or malformed', severity: 'low' })
+  }
+
   return flags
 }
 

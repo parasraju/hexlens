@@ -18,13 +18,13 @@ const report = await analyze("program.exe")
 
 ## Features
 
-- **Format Detection** — PE32/PE32+, ELF32/ELF64, Mach-O, WASM, DEX (Android), .NET (managed PE), Universal/Fat binaries detected but treated as Mach-O
+- **Format Detection** — PE32/PE32+, ELF32/ELF64, Mach-O (including the first slice of a universal binary), WASM, DEX (Android), .NET (managed PE). Files that match none of these are reported as unrecognized instead of a mitigation checklist.
 - **Architecture Recognition** — x86, x64, ARM, ARM64, MIPS, RISC-V, PowerPC
 - **Compiler Fingerprinting** — MSVC, GCC, Clang, MinGW, Rustc, Go, Zig, Delphi, Swift, Nim, TinyCC, Intel Compiler
 - **Language Detection** — C, C++, Rust, Go, Swift, Zig, Nim, D, Delphi, Crystal, Odin, Assembly (with confidence scoring)
 - **Library Identification** — OpenSSL, SQLite, FFmpeg, Qt, GTK, SDL, GLFW, OpenCV, libcurl, zlib, Electron, Node.js, Python, Lua, JVM, .NET Runtime
 - **Security Analysis** — ASLR, DEP, CFG, NX, PIE, RELRO, Stack Canaries, SafeSEH, digital signatures, timestamp anomalies, overlays
-- **Packer Detection** — UPX, Themida, VMProtect, MPRESS, ASPack, custom packers via entropy analysis
+- **Packer Detection** — UPX, Themida, VMProtect, MPRESS, ASPack, and a small set of packer section names. Ordinary compiler output (including the substring `MPRESS` inside `COMPRESSION`) is not flagged.
 - **Capability Inference** — Networking, DNS, HTTP, TLS, encryption, file access, clipboard, registry, process creation, code injection, keylogging, anti-debug, anti-VM, persistence, screen capture, driver loading
 - **String Intelligence** — ASCII, UTF-16, URLs, domains, IPv4, file paths, registry paths, user-agent strings, base64
 - **Import/Export Analysis** — Full import table enumeration, export symbol recovery, **imphash** computation
@@ -482,8 +482,20 @@ MIT
 
 ## Changelog
 
-- **0.4.0** — YARA rule scanning via `--yara` for `scan` and `analyze`.
+### 0.6.0
 
-## 0.5.0
+- ELF32 and ELF64 headers are read at the offsets from the System V ABI. `e_entry` is reported, section names resolve, and dynamic imports, `DT_NEEDED` libraries, and symbol tables are recovered.
+- PE32 `ImageBase` and `DllCharacteristics` are read after `BaseOfData`. Mach-O load commands are walked by `cmdsize`, including 64-bit segments and `LC_MAIN`.
+- Parsers bounds-check every read. Truncated or malformed input returns a partial result instead of throwing.
+- Packer detection requires a real marker. High entropy alone, and the letters `MPRESS` inside `COMPRESSION`, no longer flag a packer.
+- Unrecognized files print **Not a recognized binary** and omit the security checklist.
+- Compiler, language, and library confidence is higher when a version string, ABI marker, or linked library is present, and stays unreported when the only evidence is a generic section name.
+- ELF security checks report PIE, NX (`PT_GNU_STACK`), and RELRO (`PT_GNU_RELRO`) instead of Windows-only mitigations.
+
+### 0.5.0
 
 Binary diff (`hexlens diff a.bin b.bin`) — byte-level and report-level comparison.
+
+### 0.4.0
+
+YARA rule scanning via `--yara` for `scan` and `analyze`.
