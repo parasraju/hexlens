@@ -35,6 +35,7 @@ const report = await analyze("program.exe")
 - **Batch Scanning** — Triage a whole folder in one flag-aware summary table (`hexlens scan ./samples/`)
 - **YARA Rule Scanning** — Match every scanned file against a YARA rule file (`--yara rules.yar`), backed by libyara compiled to WebAssembly
 - **Binary Diff** — Compare two binaries by raw bytes and by analysis report (`hexlens diff old.bin new.bin`)
+- **MCP** — Analyze, scan, and diff from an AI agent over stdio (`hexlens mcp`)
 - **Interactive TUI** — Browse any analysis with a keyboard-driven terminal UI (`hexlens tui`)
 - **Plugin System** — Extend HexLens with custom detectors without modifying the core
 - **Multiple Reporters** — Terminal, JSON, Markdown, HTML, SARIF, YAML, CSV
@@ -79,6 +80,9 @@ npx hexlens scan ./samples/ --yara rules.yar
 
 # Compare two binaries (byte diff and report diff)
 npx hexlens diff old.bin new.bin
+
+# Serve analyze, scan, and diff to an AI agent over MCP stdio
+npx hexlens mcp
 
 # Write the same diff as JSON
 npx hexlens diff old.bin new.bin --format json --output diff.json
@@ -280,6 +284,58 @@ An identical copy of `old.bin` prints `Files are identical.` and both SHA-256
 lines (`6febb11c24addaa7bee421ef6299edd8ed981eabe17501dcdc220167d884b4af`) and
 exits 0.
 
+### MCP mode — use hexlens from your AI agent
+
+`hexlens mcp` starts a Model Context Protocol (MCP) server on stdio. Claude Code, Cursor, and opencode can call it as an AI agent. The process prints only MCP messages on stdout, and it does not open a port.
+
+Three tools call the same functions as the CLI.
+
+- `hexlens_analyze` reads one file (`path`). Set `yaraRules` to a `.yar` file to include YARA matches. The result is the analysis report as JSON.
+- `hexlens_scan` reads a file or directory (`target`, default `.`) and returns one summary per recognized binary.
+- `hexlens_diff` reads `fileA` and `fileB` and returns byte stats plus the added, removed, and changed report fields. The JSON is the same object `hexlens diff --format json` prints.
+
+A missing file, an unreadable file, or a file `hexlens_analyze` does not recognize returns an error that names the path. The server stays up. `hexlens_diff` still compares files that are not recognized binaries, matching the CLI.
+
+Claude Code (`.mcp.json`) and Cursor (`.cursor/mcp.json`) use this entry.
+
+```json
+{
+  "mcpServers": {
+    "hexlens": {
+      "command": "hexlens",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+opencode (`opencode.json`) starts a local command. Current OpenCode configs put that command under `mcp.servers`.
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "hexlens": {
+        "type": "local",
+        "command": ["hexlens", "mcp"]
+      }
+    }
+  }
+}
+```
+
+`hexlens_analyze` on the 22-byte WebAssembly module from the diff sample above (`old.bin`, SHA-256 `6febb11c24addaa7bee421ef6299edd8ed981eabe17501dcdc220167d884b4af`, import `env.print`) returns the full report. This run reported format `WASM`, import `env.print`, and imphash `c89fde4fe83607ca1a53e4b7684f3259`.
+
+```json
+{
+  "format": "WASM",
+  "imports": [{ "module": "env", "name": "print" }],
+  "metadata": { "imphash": "c89fde4fe83607ca1a53e4b7684f3259" }
+}
+```
+
+That JSON is an excerpt. The tool returns the rest of the report as well (sections, strings, hashes, and the other `analyze()` fields).
+
 ## Images 
 
 <img width="1094" height="572" alt="Screenshot 2026-08-16 225046" src="https://github.com/user-attachments/assets/c76474c4-ba66-426e-9c7d-8bb691296919" />
@@ -423,6 +479,8 @@ src/
 ├── index.ts           # Public API + exports
 ├── analyze.ts         # Core analyze() implementation
 ├── cli.ts             # CLI entry point
+├── mcp/               # MCP server (hexlens mcp)
+│   └── index.ts
 ├── tui.ts             # Interactive terminal UI (hexlens tui)
 ├── diff/              # Binary diff (bytes + report)
 │   └── index.ts
@@ -483,6 +541,8 @@ MIT
 ## Changelog
 
 ### 0.6.0
+
+MCP mode (`hexlens mcp`) — analyze, scan, and diff binaries from your AI agent via 3 MCP tools.
 
 - ELF32 and ELF64 headers are read at the offsets from the System V ABI. `e_entry` is reported, section names resolve, and dynamic imports, `DT_NEEDED` libraries, and symbol tables are recovered.
 - PE32 `ImageBase` and `DllCharacteristics` are read after `BaseOfData`. Mach-O load commands are walked by `cmdsize`, including 64-bit segments and `LC_MAIN`.
