@@ -91,6 +91,16 @@ npx hexlens diff old.bin new.bin --format json --output diff.json
 npx hexlens formats
 ```
 
+### You just got handed a mystery binary. Now what?
+
+You have a mystery binary and no source. These five commands are binary triage.
+
+1. `npx hexlens analyze program.exe`. Read format, architecture, compiler, imphash, and the first risk flags.
+2. `npx hexlens scan ./samples/ --all`. Read the triage table (`PACKED`, `UNSIGNED`, `INJECT`, `KEYLOG`, `ANTI-DBG`, `PERSIST`). Start with the highest-risk rows.
+3. `npx hexlens scan ./samples/ --yara rules.yar`. Match your YARA rules.
+4. `npx hexlens diff old.bin new.bin`. Compare the mystery binary against a known-good build.
+5. `npx hexlens mcp`. Hand the binary to your AI agent to triage with the same three tools.
+
 ### Batch Scanning
 
 `hexlens scan <path>` walks a file or directory, runs the same `analyze()` pipeline on every
@@ -561,3 +571,7 @@ Binary diff (`hexlens diff a.bin b.bin`) — byte-level and report-level compari
 ### 0.4.0
 
 YARA rule scanning via `--yara` for `scan` and `analyze`.
+
+## 0.7.1
+
+README: 'You just got handed a mystery binary' triage walkthrough — first 5 minutes with an unknown binary.
