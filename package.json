@@ -1,7 +1,7 @@
 {
   "name": "hexlens",
-  "version": "0.7.0",
-  "description": "Open Source Binary Intelligence & Reverse Engineering Framework. Use it from your AI coding agent via MCP.",
+  "version": "0.7.1",
+  "description": "Open Source Binary Intelligence & Reverse Engineering Framework. Use it from your AI coding agent via MCP. Handed a mystery binary? Analyze it, triage it, and diff it in minutes.",
   "homepage": "https://github.com/parasraju/hexlens#readme",
   "repository": {
     "type": "git",
@@ -58,7 +58,8 @@
     "binary-diff",
     "binary-diffing",
     "mcp",
-    "model-context-protocol"
+    "model-context-protocol",
+    "binary-triage"
   ],
   "license": "MIT",
   "dependencies": {
