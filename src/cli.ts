@@ -3,7 +3,7 @@ import { Command } from 'commander'
 import { analyze, diffOrExit, scan } from './index.js'
 import { startMcpServer } from './mcp/index.js'
 import { runTUI } from './tui.js'
-import { toJSON, toMarkdown, toTerminal, toHTML, toSARIF, toYAML, toCSV, toDiffJSON, toDiffTerminal } from './reporters/index.js'
+import { toJSON, toMarkdown, toTerminal, toHTML, toSARIF, toYAML, toCSV, toIOC, toSTIX, toDiffJSON, toDiffTerminal } from './reporters/index.js'
 import { formatYaraMatches } from './reporters/terminal.js'
 import { formatScan } from './reporters/scan.js'
 import { YaraScanner } from './yara/index.js'
@@ -30,10 +30,23 @@ program
     try {
       const scanner = options.yara ? await YaraScanner.load(options.yara) : null
       console.log('Analyzing binary...')
-      const report = await analyze(resolve(file))
+      const resolved = resolve(file)
+      const report = await analyze(resolved)
       const yaraMatches = scanner
-        ? scanner.match(await readFile(resolve(file)), resolve(file))
+        ? scanner.match(await readFile(resolved), resolved)
         : null
+
+      if (options.format === 'ioc' || options.format === 'stix') {
+        if (report.format === 'Unknown') {
+          const note = typeof report.metadata.note === 'string'
+            ? report.metadata.note
+            : 'Not a recognized binary.'
+          throw new Error(`${note} File: ${resolved}`)
+        }
+        if (report.metadata.truncated === true) {
+          throw new Error(`Truncated or malformed header. Not enough of the file is present to parse program headers or sections. File: ${resolved}`)
+        }
+      }
 
       let output: string
       switch (options.format) {
@@ -56,6 +69,12 @@ program
           break
         case 'csv':
           output = toCSV(report)
+          break
+        case 'ioc':
+          output = toIOC(report, yaraMatches, options.pretty)
+          break
+        case 'stix':
+          output = toSTIX(report, yaraMatches, options.pretty)
           break
         case 'terminal':
         default:
@@ -200,8 +219,11 @@ program
     console.log('  sarif     - SARIF format for static analysis tools')
     console.log('  yaml      - YAML report')
     console.log('  csv       - CSV report')
+    console.log('  ioc       - IOC list from analyze (hashes, URLs, IPs, imports, YARA rule names)')
+    console.log('  stix      - STIX 2.1 bundle from analyze')
     console.log('')
-    console.log('Batch scan uses the same formats: hexlens scan <path> --format <format>')
+    console.log('Batch scan uses terminal, json, markdown, html, sarif, yaml, and csv.')
+    console.log('ioc and stix are analyze only.')
   })
 
 program.parse(process.argv)

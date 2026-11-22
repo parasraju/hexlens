@@ -1,7 +1,7 @@
 {
   "name": "hexlens",
-  "version": "0.7.1",
-  "description": "Open Source Binary Intelligence & Reverse Engineering Framework. Use it from your AI coding agent via MCP. Handed a mystery binary? Analyze it, triage it, and diff it in minutes.",
+  "version": "0.7.2",
+  "description": "Open Source Binary Intelligence & Reverse Engineering Framework. Use it from your AI coding agent via MCP. Handed a mystery binary? Analyze it, triage it, and diff it in minutes. Export IOCs as STIX.",
   "homepage": "https://github.com/parasraju/hexlens#readme",
   "repository": {
     "type": "git",
@@ -59,7 +59,9 @@
     "binary-diffing",
     "mcp",
     "model-context-protocol",
-    "binary-triage"
+    "binary-triage",
+    "ioc",
+    "stix"
   ],
   "license": "MIT",
   "dependencies": {

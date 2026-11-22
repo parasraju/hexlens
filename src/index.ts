@@ -8,7 +8,7 @@ export { calculateMetrics, analyzeSymbols, discoverFunctions } from './analysis/
 export { buildAllGraphs, graphToGraphviz, graphToMermaid, compareBinaries, createPluginManager } from './engine/index.js'
 export { computeImphash } from './utils/hash.js'
 
-export { toJSON, toMarkdown, toTerminal, toHTML, toSARIF, toYAML, toCSV, toDiffJSON, toDiffTerminal } from './reporters/index.js'
+export { toJSON, toMarkdown, toTerminal, toHTML, toSARIF, toYAML, toCSV, toIOC, toSTIX, toDiffJSON, toDiffTerminal } from './reporters/index.js'
 export { diff, diffExitCode, diffOrExit } from './diff/index.js'
 export { toScanTable, toScanJSON, toScanCSV, toScanMarkdown, toScanHTML, toScanSARIF, toScanYAML, formatScan } from './reporters/scan.js'
 

@@ -39,6 +39,7 @@ const report = await analyze("program.exe")
 - **Interactive TUI** — Browse any analysis with a keyboard-driven terminal UI (`hexlens tui`)
 - **Plugin System** — Extend HexLens with custom detectors without modifying the core
 - **Multiple Reporters** — Terminal, JSON, Markdown, HTML, SARIF, YAML, CSV
+- **IOC export** — `analyze --format ioc` writes a JSON indicator list, and `analyze --format stix` writes a STIX 2.1 bundle
 
 ---
 
@@ -62,6 +63,10 @@ npx hexlens analyze program.exe --format json --pretty
 
 # Save to file
 npx hexlens analyze program.exe --format html --output report.html
+
+# IOC list, or a STIX 2.1 bundle
+npx hexlens analyze program.exe --format ioc --output iocs.json
+npx hexlens analyze program.exe --format stix --output iocs.stix.json
 
 # Interactive terminal UI
 npx hexlens tui program.exe
@@ -174,8 +179,52 @@ a WebAssembly build of libyara. Text strings, hex strings, regular expressions,
 string modifiers (`ascii`, `wide`, `nocase`, `fullword`), metadata, tags, and
 normal YARA conditions are supported, and bundled modules such as `pe` are
 available. `include` directives are not supported by the WebAssembly build, so
-rule files must be self-contained. Terminal and JSON are the supported YARA
-outputs; the other reporters do not add dedicated YARA sections.
+rule files must be self-contained. Terminal and JSON print the match records.
+`--format ioc` and `--format stix` include the rule names. The other reporters
+do not add a YARA section.
+
+### IOC export — share indicators as STIX
+
+`hexlens analyze` can write an IOC export for one file. `--format ioc` prints a JSON object. `--format stix` prints a STIX 2.1 bundle with `type` `bundle`, `spec_version` `2.1`, and an `objects` array. `--output` writes that text to a file. `hexlens scan` does not write this export.
+
+Each field is taken from the analysis report.
+
+- `sha256`, `md5`, and `sha1` come from `file`.
+- `imphash` comes from `metadata.imphash` when that string is non-empty, and is null otherwise.
+- `urls` are the URL matches in strings whose type is `URL`.
+- `ips` are the valid IPv4 matches in strings whose type is `IPv4`.
+- `imports` are the symbol names in `imports[].name`.
+- `yara_matches` are the rule names from `--yara`, and the array is empty when that flag is omitted.
+
+A repeated URL, IP, import name, or rule name appears once. An empty category is an empty array. Domain strings, registry paths, file paths, and base64 strings remain in the full report.
+
+An unrecognized file, or a file with a truncated header, is an error that names the file. The command does not print an empty IOC list.
+
+```bash
+hexlens analyze marked-pe.bin --format ioc
+hexlens analyze marked-pe.bin --format ioc --output iocs.json
+hexlens analyze marked-pe.bin --format stix --output iocs.stix.json
+```
+
+This is the stdout of `hexlens analyze marked-pe.bin --format ioc` on a minimal PE. That file contains the URL `https://example.com/update` twice and the address `203.0.113.10` twice, and it has no imports. The domain `example.com` is in the report and is not a separate entry in this IOC export.
+
+```text
+Analyzing binary...
+{
+  "sha256": "a17b9f5de0d9d6ee7142e5d019a93a1424388563c0f9b4a68e126e225a01bc15",
+  "md5": "f2d79eb3cc56e35bc09b440867491bf5",
+  "sha1": "bfd131927711293e9cace47d74d49b290ecf9d54",
+  "imphash": null,
+  "urls": [
+    "https://example.com/update"
+  ],
+  "ips": [
+    "203.0.113.10"
+  ],
+  "imports": [],
+  "yara_matches": []
+}
+```
 
 ### Binary diff — compare two binaries
 
@@ -533,6 +582,7 @@ src/
 │   ├── sarif.ts
 │   ├── yaml.ts
 │   ├── csv.ts
+│   ├── ioc.ts         # IOC JSON list and STIX 2.1 bundle
 │   ├── scan.ts        # Batch triage table / bundle reporters
 │   └── diff.ts        # Binary diff terminal and JSON output
 └── utils/             # Shared utilities
@@ -575,3 +625,7 @@ YARA rule scanning via `--yara` for `scan` and `analyze`.
 ## 0.7.1
 
 README: 'You just got handed a mystery binary' triage walkthrough — first 5 minutes with an unknown binary.
+
+## 0.7.2
+
+IOC export (`--format ioc` / `--format stix`) — file hashes, URLs, IPs, imports and YARA matches as a STIX 2.1 bundle.
