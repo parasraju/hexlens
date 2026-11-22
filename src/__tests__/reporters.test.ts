@@ -163,7 +163,7 @@ describe('ioc export', () => {
     expect(toSTIX(report, yara, true, created)).toBe(text)
     const parsed = JSON.parse(text)
     expect(parsed.type).toBe('bundle')
-    expect(parsed.spec_version).toBe('2.1')
+    expect(parsed).not.toHaveProperty('spec_version')
     expect(parsed.id).toMatch(/^bundle--[0-9a-f-]{36}$/)
 
     const files = parsed.objects.filter((object: { type: string }) => object.type === 'file')
@@ -204,7 +204,7 @@ describe('ioc export', () => {
     const ipIndicator = indicators.find((object: { name: string }) => object.name === '203.0.113.10')
     expect(ipIndicator.pattern).toContain("[ipv4-addr:value = '203.0.113.10']")
     const fileIndicator = indicators.find((object: { name: string }) => object.name === 'test.exe')
-    expect(fileIndicator.description).toBe('imphash deadbeef')
+    expect(fileIndicator.description).toBe('File hashes of test.exe. imphash deadbeef')
     expect(fileIndicator.pattern).toContain("file:hashes.MD5 = 'ghi'")
     expect(fileIndicator.pattern).toContain("file:hashes.'SHA-1' = 'def'")
     const blob = JSON.stringify(parsed)
@@ -213,5 +213,25 @@ describe('ioc export', () => {
     expect(blob).not.toContain('999.999.999.999')
     expect(blob).not.toContain('hexlens')
     expect(blob).not.toContain('KERNEL32')
+  })
+
+  it('omits spec_version on the bundle and names and describes every indicator', () => {
+    const parsed = JSON.parse(toSTIX(report, yara, true, new Date('2026-11-22T15:30:00.000Z')))
+    expect(parsed.type).toBe('bundle')
+    expect(parsed).not.toHaveProperty('spec_version')
+    const indicators = parsed.objects.filter((object: { type: string }) => object.type === 'indicator')
+    expect(indicators.length).toBeGreaterThan(0)
+    for (const object of indicators) {
+      expect(object.name).toEqual(expect.any(String))
+      expect(object.name.length).toBeGreaterThan(0)
+      expect(object.description).toEqual(expect.any(String))
+      expect(object.description.length).toBeGreaterThan(0)
+      expect(object.spec_version).toBe('2.1')
+    }
+    const others = parsed.objects.filter((object: { type: string }) => object.type !== 'indicator')
+    expect(others.length).toBeGreaterThan(0)
+    for (const object of others) {
+      expect(object.spec_version).toBe('2.1')
+    }
   })
 })
