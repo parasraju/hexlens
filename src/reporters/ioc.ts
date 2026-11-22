@@ -51,7 +51,7 @@ export function toSTIX(
         'SHA-1': list.sha1,
       },
     },
-    indicator(report.file.name, fileObservation, created, list.imphash ? `imphash ${list.imphash}` : undefined),
+    indicator(report.file.name, fileObservation, created, fileDescription(report.file.name, list.imphash)),
   ]
 
   for (const ip of list.ips) {
@@ -61,7 +61,12 @@ export function toSTIX(
       id: stixId('ipv4-addr', ip),
       value: ip,
     })
-    objects.push(indicator(ip, `${shaObservation} AND [ipv4-addr:value = '${stixString(ip)}']`, created))
+    objects.push(indicator(
+      ip,
+      `${shaObservation} AND [ipv4-addr:value = '${stixString(ip)}']`,
+      created,
+      `IPv4 address seen in strings of ${report.file.name}`,
+    ))
   }
 
   for (const url of list.urls) {
@@ -71,7 +76,12 @@ export function toSTIX(
       id: stixId('url', url),
       value: url,
     })
-    objects.push(indicator(url, `${shaObservation} AND [url:value = '${stixString(url)}']`, created))
+    objects.push(indicator(
+      url,
+      `${shaObservation} AND [url:value = '${stixString(url)}']`,
+      created,
+      `URL seen in strings of ${report.file.name}`,
+    ))
   }
 
   for (const name of list.imports) {
@@ -85,9 +95,12 @@ export function toSTIX(
   return JSON.stringify({
     type: 'bundle',
     id: stixId('bundle', bundleMaterial(list)),
-    spec_version: '2.1',
     objects,
   }, null, pretty ? 2 : undefined)
+}
+
+function fileDescription(name: string, imphash: string | null): string {
+  return imphash ? `File hashes of ${name}. imphash ${imphash}` : `File hashes of ${name}`
 }
 
 function iocList(report: BinaryReport, yaraMatches?: readonly YaraMatch[] | null): IocList {

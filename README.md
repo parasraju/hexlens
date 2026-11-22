@@ -185,7 +185,7 @@ do not add a YARA section.
 
 ### IOC export — share indicators as STIX
 
-`hexlens analyze` can write an IOC export for one file. `--format ioc` prints a JSON object. `--format stix` prints a STIX 2.1 bundle with `type` `bundle`, `spec_version` `2.1`, and an `objects` array. `--output` writes that text to a file. `hexlens scan` does not write this export.
+`hexlens analyze` can write an IOC export for one file. `--format ioc` prints a JSON object. `--format stix` prints a STIX 2.1 bundle with `type` `bundle` and an `objects` array. Each object in that array has `spec_version` `2.1`. The bundle object does not. `--output` writes that text to a file. `hexlens scan` does not write this export.
 
 Each field is taken from the analysis report.
 
